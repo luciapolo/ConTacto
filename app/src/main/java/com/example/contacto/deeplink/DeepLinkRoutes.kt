@@ -1,4 +1,4 @@
-package com.example.contacto.deeplink
+package com.example.elder.deeplink
 
 
 sealed class Route(val path: String) {
