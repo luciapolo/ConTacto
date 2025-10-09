@@ -44,12 +44,12 @@
                 <data android:scheme="app" android:host="elder" />
             </intent-filter>
 
-            <!-- NFC NDEF -->
-            <intent-filter>
+            <!-- NFC NDEF - Abre la aplicación cada vez que el móvil detecta un NFC -->
+            <!-- <intent-filter>
                 <action android:name="android.nfc.action.NDEF_DISCOVERED" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
-            </intent-filter>
+            </intent-filter> -->
 
             <meta-data
                 android:name="android.nfc.action.TECH_DISCOVERED"

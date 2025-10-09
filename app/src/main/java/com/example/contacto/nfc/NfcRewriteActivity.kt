@@ -33,14 +33,18 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 class NfcRewriteActivity : ComponentActivity() {
 
     private var nfcAdapter: NfcAdapter? = null
+
+    // Handler que la UI registrará para recibir el resultado detallado
+    private var onWriteResult: ((WriteResult) -> Unit)? = null
+
     private val readerCallback = NfcAdapter.ReaderCallback { tag ->
         pendingMessage?.let { msg ->
-            val success = writeNdefToTag(tag, msg)
-            onWriteResult?.invoke(success)
+            val result = writeNdefToTagWithReason(tag, msg)
+            onWriteResult?.invoke(result)
         }
     }
+
     private var pendingMessage: NdefMessage? = null
-    private var onWriteResult: ((Boolean) -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,15 +55,18 @@ class NfcRewriteActivity : ComponentActivity() {
                 NfcRewriteScreen(
                     onBack = { finish() },
                     nfcAvailable = nfcAdapter != null,
-                    onStartListening = { message, onResult ->
+                    // La UI me dice qué mensaje escribir y yo activo el ReaderMode
+                    onStartListening = { message, _ /* ignoramos el boolean callback */ ->
                         pendingMessage = message
-                        onWriteResult = onResult
                         enableReaderMode()
                     },
                     onStopListening = {
                         disableReaderMode()
                         pendingMessage = null
-                        onWriteResult = null
+                    },
+                    // La UI registra aquí su handler para recibir el resultado
+                    registerResultHandler = { handler ->
+                        onWriteResult = handler
                     }
                 )
             }
@@ -79,7 +86,8 @@ class NfcRewriteActivity : ComponentActivity() {
                     NfcAdapter.FLAG_READER_NFC_B or
                     NfcAdapter.FLAG_READER_NFC_F or
                     NfcAdapter.FLAG_READER_NFC_V or
-                    NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK,
+                    NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK or
+                    NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS,
             null
         )
     }
@@ -99,8 +107,10 @@ fun NfcRewriteScreen(
     onBack: () -> Unit,
     nfcAvailable: Boolean,
     onStartListening: (NdefMessage, (Boolean) -> Unit) -> Unit,
-    onStopListening: () -> Unit
-) {
+    onStopListening: () -> Unit,
+    // NUEVO: en vez de onWriteResult (callback directo), registramos el handler
+    registerResultHandler: ((WriteResult) -> Unit) -> Unit
+){
     val context = LocalContext.current
 
     var type by remember { mutableStateOf(PayloadType.CALL) }
@@ -108,6 +118,7 @@ fun NfcRewriteScreen(
     var waiting by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var lastReason by remember { mutableStateOf<String?>(null) }
 
     // --- Picker de contactos + permiso ---
     var pendingPick by remember { mutableStateOf(false) }
@@ -225,7 +236,9 @@ fun NfcRewriteScreen(
 
                 // Botón extra: Elegir de contactos (solo en modo Llamar)
                 if (type == PayloadType.CALL) {
-                    OutlinedButton(onClick = { pickFromContacts() }) {
+                    OutlinedButton(onClick = {
+                        if (!waiting) pickFromContacts()
+                    }) {
                         Text("Elegir de contactos")
                     }
                 }
@@ -242,16 +255,21 @@ fun NfcRewriteScreen(
                         enabled = nfcAvailable && !waiting,
                         onClick = {
                             val validation = validateInput(type, input.text)
-                            if (validation != null) {
-                                error = validation
-                                return@Button
-                            }
+                            if (validation != null) { error = validation; return@Button }
+
                             status = "Acerca una etiqueta para escribir…"
+                            lastReason = null
                             waiting = true
-                            onStartListening(messageToWrite) { success ->
+
+                            // 1) Registramos el handler que la Activity invocará al escribir
+                            registerResultHandler { result ->
                                 waiting = false
-                                status = if (success) "✅ ¡Escritura completada!" else "❌ No se pudo escribir."
+                                status = if (result.success) "✅ ¡Escritura completada!" else "❌ No se pudo escribir."
+                                lastReason = result.reason
                             }
+
+                            // 2) Activamos el modo escucha/escritura
+                            onStartListening(messageToWrite) { /* ignorado */ }
                         }
                     ) { Text("Listo") }
 
@@ -263,6 +281,10 @@ fun NfcRewriteScreen(
                             status = "Escritura cancelada."
                         }
                     ) { Text("Cancelar") }
+                }
+
+                lastReason?.let {
+                    Text("Detalle: $it", style = MaterialTheme.typography.bodySmall)
                 }
 
                 if (waiting) AssistCard("Mantén el tag en la parte trasera del móvil hasta que vibre o aparezca el OK.")
@@ -313,7 +335,6 @@ private fun AssistCard(message: String) {
 
 /** =========== Construcción del NDEF =========== */
 
-// URI NDEF (tel: o https:)
 private fun buildMessage(type: PayloadType, rawInput: String): NdefMessage {
     val records = mutableListOf<NdefRecord>()
     when (type) {
@@ -327,7 +348,7 @@ private fun buildMessage(type: PayloadType, rawInput: String): NdefMessage {
         }
     }
     // (Opcional) AAR de tu app
-    records += NdefRecord.createApplicationRecord("com.example.contacto")
+    //records += NdefRecord.createApplicationRecord("com.example.contacto")
     return NdefMessage(records.toTypedArray())
 }
 
@@ -347,38 +368,50 @@ private fun validateInput(type: PayloadType, input: String): String? {
     }
 }
 
-/** Quita espacios y guiones; permite prefijo + */
 private fun normalizePhone(input: String): String {
     val cleaned = input.trim().replace("[\\s-]".toRegex(), "")
     return if (cleaned.matches(Regex("^\\+?[0-9]{5,}$"))) cleaned else ""
 }
 
-/** Si el usuario no puso esquema, forzamos https */
 private fun ensureUrlScheme(input: String): String {
     val t = input.trim()
     return if (t.startsWith("http://") || t.startsWith("https://")) t else "https://$t"
 }
 
-/** Escritura al tag */
-private fun writeNdefToTag(tag: Tag, message: NdefMessage): Boolean {
+/** Escritura al tag con motivo */
+data class WriteResult(
+    val success: Boolean,
+    val reason: String? = null
+)
+
+private fun writeNdefToTagWithReason(tag: Tag, message: NdefMessage): WriteResult {
     return try {
-        (Ndef.get(tag))?.let { ndef ->
+        Ndef.get(tag)?.let { ndef ->
             ndef.connect()
-            return if (ndef.isWritable) {
-                if (message.toByteArray().size > ndef.maxSize) { ndef.close(); false }
-                else { ndef.writeNdefMessage(message); ndef.close(); true }
-            } else { ndef.close(); false }
+            if (!ndef.isWritable) {
+                ndef.close()
+                return WriteResult(false, "El tag está bloqueado (no es escribible).")
+            }
+            val size = message.toByteArray().size
+            val max = ndef.maxSize
+            if (size > max) {
+                ndef.close()
+                return WriteResult(false, "Mensaje demasiado grande (${size}B > ${max}B). Prueba sin AAR o usa un tag con más memoria.")
+            }
+            ndef.writeNdefMessage(message)
+            ndef.close()
+            return WriteResult(true)
         }
 
-        (NdefFormatable.get(tag))?.let { formatable ->
-            formatable.connect()
-            formatable.format(message)
-            formatable.close()
-            return true
+        NdefFormatable.get(tag)?.let { fmt ->
+            fmt.connect()
+            fmt.format(message)
+            fmt.close()
+            return WriteResult(true)
         }
 
-        false
-    } catch (_: Exception) {
-        false
+        WriteResult(false, "Tipo de etiqueta no compatible (no NDEF / no formateable).")
+    } catch (e: Exception) {
+        WriteResult(false, "Excepción al escribir: ${e.message ?: e::class.java.simpleName}")
     }
 }
