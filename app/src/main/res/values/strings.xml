@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">ConTacto</string>
+    <string name="accessibility_description">ConTacto: servicio de accesibilidad</string>
 </resources>

@@ -54,7 +54,7 @@ object GuideOverlay {
     private class HighlightView(context: Context) : View(context) {
         var rects: List<Rect> = emptyList()
         private val paint = Paint().apply {
-            style = Paint.STROKE
+            style = Paint.Style.STROKE
             strokeWidth = 8f
             color = Color.RED
         }
