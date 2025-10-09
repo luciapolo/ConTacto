@@ -253,12 +253,6 @@ fun NfcRewriteScreen(
                             }
                         )
                     },
-                    supportingText = {
-                        if (type == PayloadType.CALL)
-                            Text("Se abrirá el marcador con el número (no llama automáticamente).")
-                        else
-                            Text("Se abrirá el navegador en esa página.")
-                    },
                     isError = error != null,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -321,7 +315,7 @@ fun NfcRewriteScreen(
                     Text("Detalle: $it", style = MaterialTheme.typography.bodySmall)
                 }
 
-                if (waiting) AssistCard("Mantén el tag en la parte trasera del móvil hasta que vibre o aparezca el OK.")
+                if (waiting) AssistCard("Mantén el tag en la parte trasera del móvil hasta que aparezca el mensaje de confirmación.")
                 status?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
             }
         }
