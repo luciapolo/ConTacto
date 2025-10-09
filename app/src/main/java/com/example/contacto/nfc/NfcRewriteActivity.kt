@@ -38,11 +38,38 @@ class NfcRewriteActivity : ComponentActivity() {
     private var onWriteResult: ((WriteResult) -> Unit)? = null
 
     private val readerCallback = NfcAdapter.ReaderCallback { tag ->
-        pendingMessage?.let { msg ->
-            val result = writeNdefToTagWithReason(tag, msg)
-            onWriteResult?.invoke(result)
+        // ========= Diagnóstico =========
+        /*
+        val idHex = tag.id.joinToString("") { "%02X".format(it) }
+        val techsCsv = tag.techList.joinToString()
+        val ndef = Ndef.get(tag)
+        val fmt = NdefFormatable.get(tag)
+        val diagHeader = buildString {
+            append("UID=$idHex  techs=$techsCsv")
+            append(
+                if (ndef != null) " | NDEF OK (max=${ndef.maxSize}B)"
+                else if (fmt != null) " | NdefFormatable OK"
+                else " | No NDEF/Formatable"
+            )
         }
+        */
+
+        // ========= Flujo mínimo: escribir si hay mensaje pendiente =========
+        val msg = pendingMessage
+        val result: WriteResult = if (msg != null) {
+            writeNdefToTagWithReason(tag, msg)
+        } else {
+            WriteResult(false, "No hay mensaje preparado.")
+        }
+
+        // (Opcional) Si activaste el diagnóstico ampliado, añade el header:
+        // val merged = result.copy(reason = listOf(diagHeader, result.reason).filterNotNull().joinToString(" | "))
+        // onWriteResult?.invoke(merged)
+
+        // Diagnóstico mínimo: solo confirma éxito/fracaso
+        onWriteResult?.invoke(result)
     }
+
 
     private var pendingMessage: NdefMessage? = null
 
@@ -86,7 +113,6 @@ class NfcRewriteActivity : ComponentActivity() {
                     NfcAdapter.FLAG_READER_NFC_B or
                     NfcAdapter.FLAG_READER_NFC_F or
                     NfcAdapter.FLAG_READER_NFC_V or
-                    NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK or
                     NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS,
             null
         )
@@ -178,6 +204,9 @@ fun NfcRewriteScreen(
         mutableStateOf(buildMessage(type, input.text))
     }
 
+    // Tamaño estimado (ayuda para ver si cabe en el tag)
+    val estimatedBytes = remember(messageToWrite) { messageToWrite.toByteArray().size }
+
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -232,6 +261,11 @@ fun NfcRewriteScreen(
                     },
                     isError = error != null,
                     modifier = Modifier.fillMaxWidth()
+                )
+
+                Text(
+                    "Tamaño del mensaje: ${estimatedBytes} B (límite aprox. 106 B)",
+                    style = MaterialTheme.typography.bodySmall
                 )
 
                 // Botón extra: Elegir de contactos (solo en modo Llamar)
@@ -335,22 +369,22 @@ private fun AssistCard(message: String) {
 
 /** =========== Construcción del NDEF =========== */
 
+/** =========== Construcción del NDEF =========== */
 private fun buildMessage(type: PayloadType, rawInput: String): NdefMessage {
-    val records = mutableListOf<NdefRecord>()
-    when (type) {
+    val record: NdefRecord = when (type) {
         PayloadType.CALL -> {
             val tel = normalizePhone(rawInput)
-            records += NdefRecord.createUri("tel:$tel")
+            NdefRecord.createUri("tel:$tel")
         }
         PayloadType.URL -> {
             val url = ensureUrlScheme(rawInput)
-            records += NdefRecord.createUri(url)
+            NdefRecord.createUri(url)
         }
     }
-    // (Opcional) AAR de tu app
-    //records += NdefRecord.createApplicationRecord("com.example.contacto")
-    return NdefMessage(records.toTypedArray())
+    // Un único record para minimizar tamaño (no AAR, ni texto extra)
+    return NdefMessage(arrayOf(record))
 }
+
 
 /** Validaciones rápidas */
 private fun validateInput(type: PayloadType, input: String): String? {
