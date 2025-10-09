@@ -4,14 +4,16 @@
     <!-- Permisos -->
     <uses-permission android:name="android.permission.NFC" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <!-- Quita CALL_PHONE si usas ACTION_DIAL (así evitas la advertencia de telefonía) -->
-    <!-- <uses-permission android:name="android.permission.CALL_PHONE" /> -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
     <!-- Habilita NFC en el dispositivo -->
-    <uses-feature android:name="android.hardware.nfc" android:required="false" />
+    <uses-feature android:name="android.hardware.nfc" android:required="true" />
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
 
     <!-- Permiso para vibrar -->
     <uses-permission android:name="android.permission.VIBRATE" />
@@ -26,14 +28,30 @@
         android:theme="@style/Theme.ConTacto">
 
         <activity
+            android:name=".nfc.NfcReader"
+            android:exported="true"
+            android:launchMode="singleTop" >
+
+        <!-- NDEF con URI tel:  -> abrirá tu actividad directamente -->
+        <intent-filter>
+            <action android:name="android.nfc.action.NDEF_DISCOVERED"/>
+            <category android:name="android.intent.category.DEFAULT"/>
+            <data android:scheme="tel"/>
+        </intent-filter>
+
+        </activity>
+
+        <activity
             android:name=".nfc.NfcRewriteActivity"
             android:exported="true"
-            android:label="Reescribir NFC" />
+            android:label="Reescribir NFC"
+            android:launchMode="singleTop" />
 
         <!-- Como el namespace es com.example.contacto, con .MainActivity basta -->
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTop" >
 
             <!-- Launcher -->
             <intent-filter>
@@ -54,11 +72,11 @@
                 <action android:name="android.nfc.action.NDEF_DISCOVERED" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
-            </intent-filter> -->
+            </intent-filter>
 
             <meta-data
                 android:name="android.nfc.action.TECH_DISCOVERED"
-                android:resource="@xml/nfc_tech_filter" />
+                android:resource="@xml/nfc_tech_filter" /> -->
         </activity>
 
         <!-- Servicio de accesibilidad -->
