@@ -1,4 +1,18 @@
 <resources>
     <string name="app_name">ConTacto</string>
     <string name="accessibility_description">ConTacto: servicio de accesibilidad</string>
+
+    <!-- Accesibilidad -->
+    <string name="accessibility_app_logo">Logotipo de la aplicación</string>
+
+    <!-- Saludos -->
+    <string name="greeting_morning">Buenos días</string>
+    <string name="greeting_afternoon">Buenas tardes</string>
+    <string name="greeting_evening">Buenas noches</string>
+    <string name="tts_welcome">Esto es ConTacto.</string>
+
+    <!-- Home -->
+    <string name="home_subtitle">Gestiona tus tarjetas y escribe etiquetas NFC de forma sencilla.</string>
+    <string name="cta_speak">Escuchar saludo</string>
+    <string name="cta_rewrite_nfc">Reescribir NFC</string>
 </resources>

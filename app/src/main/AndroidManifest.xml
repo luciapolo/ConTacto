@@ -8,8 +8,14 @@
     <!-- <uses-permission android:name="android.permission.CALL_PHONE" /> -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
 
-    <uses-feature android:name="android.hardware.nfc" android:required="true" />
+    <!-- Habilita NFC en el dispositivo -->
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
+
+    <!-- Permiso para vibrar -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
 
     <application
         android:allowBackup="true"
@@ -18,6 +24,11 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.ConTacto">
+
+        <activity
+            android:name=".nfc.NfcRewriteActivity"
+            android:exported="true"
+            android:label="Reescribir NFC" />
 
         <!-- Como el namespace es com.example.contacto, con .MainActivity basta -->
         <activity
@@ -38,12 +49,12 @@
                 <data android:scheme="app" android:host="elder" />
             </intent-filter>
 
-            <!-- NFC NDEF -->
-            <intent-filter>
+            <!-- NFC NDEF - Abre la aplicación cada vez que el móvil detecta un NFC -->
+            <!-- <intent-filter>
                 <action android:name="android.nfc.action.NDEF_DISCOVERED" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
-            </intent-filter>
+            </intent-filter> -->
 
             <meta-data
                 android:name="android.nfc.action.TECH_DISCOVERED"
