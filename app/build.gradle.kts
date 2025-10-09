@@ -43,3 +43,4 @@ dependencies {
 // Permissions helper
     implementation("com.google.accompanist:accompanist-permissions:0.36.0")
 }
+
