@@ -8,14 +8,11 @@ import android.nfc.Tag
 import android.nfc.tech.Ndef
 import android.os.Build
 import android.os.Bundle
-import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import com.example.contacto.nfc.NfcReader
 import com.example.contacto.nfc.NfcRewriteActivity
 import com.example.contacto.ui.screens.HomeScreen
 import com.example.contacto.ui.theme.ConTactoTheme
-import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private var nfcAdapter: NfcAdapter? = null

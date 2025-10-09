@@ -11,6 +11,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
+
 
 class NfcReader : ComponentActivity() {
 
@@ -53,8 +55,8 @@ class NfcReader : ComponentActivity() {
         when {
             uri != null && uri.scheme.equals("tel", true) -> makeCall(uri)
             uri != null && (uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) -> openLink(uri)
-            text != null && text.startsWith("tel:", ignoreCase = true) -> makeCall(Uri.parse(text.trim()))
-            text != null && (text.startsWith("http://", true) || text.startsWith("https://", true)) -> openLink(Uri.parse(text.trim()))
+            text != null && text.startsWith("tel:", ignoreCase = true) -> makeCall(text.trim().toUri())
+            text != null && (text.startsWith("http://", true) || text.startsWith("https://", true)) -> openLink(text.trim().toUri())
             else -> finish()
         }
     }
@@ -123,7 +125,7 @@ class NfcReader : ComponentActivity() {
                         decodeWellKnownUri(r)?.let { uri = it }
                     }
                     r.tnf == android.nfc.NdefRecord.TNF_ABSOLUTE_URI -> {
-                        try { uri = Uri.parse(String(r.payload, Charsets.UTF_8)) } catch (_: Exception) {}
+                        try { uri = String(r.payload, Charsets.UTF_8).toUri() } catch (_: Exception) {}
                     }
                 }
             }
@@ -136,11 +138,11 @@ class NfcReader : ComponentActivity() {
         val p = record.payload
         val prefixCode = p[0].toInt() and 0xFF
         val uriBody = String(p, 1, p.size - 1, Charsets.UTF_8)
-        val prefix = NDEF_URI_PREFIXES.getOrElse(prefixCode) { "" }
-        Uri.parse(prefix + uriBody)
+        val prefix = prefixes.getOrElse(prefixCode) { "" }
+        (prefix + uriBody).toUri()
     } catch (_: Exception) { null }
 
-    private val NDEF_URI_PREFIXES = arrayOf(
+    private val prefixes = arrayOf(
         "", "http://www.", "https://www.", "http://", "https://",
         "tel:", "mailto:", "ftp://anonymous:anonymous@", "ftp://ftp.", "ftps://",
         "sftp://", "smb://", "nfs://", "ftp://", "dav://", "news:",

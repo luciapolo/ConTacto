@@ -25,6 +25,10 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import com.example.contacto.ui.theme.ConTactoTheme
+import androidx.annotation.StringRes
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.example.contacto.R
 
 // Icons
 import androidx.compose.material.icons.Icons
@@ -233,7 +237,7 @@ fun NfcRewriteScreen(
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                if (!nfcAvailable) WarningCard("Este dispositivo no tiene NFC o está desactivado.")
+                if (!nfcAvailable) WarningCard()
 
                 // Selector de tipo
                 SegmentedButtons(
@@ -258,7 +262,7 @@ fun NfcRewriteScreen(
                 )
 
                 Text(
-                    "Tamaño del mensaje: ${estimatedBytes} B (límite aprox. 106 B)",
+                    "Tamaño del mensaje: $estimatedBytes B (límite aprox. 106 B)",
                     style = MaterialTheme.typography.bodySmall
                 )
 
@@ -315,7 +319,7 @@ fun NfcRewriteScreen(
                     Text("Detalle: $it", style = MaterialTheme.typography.bodySmall)
                 }
 
-                if (waiting) AssistCard("Mantén el tag en la parte trasera del móvil hasta que aparezca el mensaje de confirmación.")
+                if (waiting) AssistCard()
                 status?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
             }
         }
@@ -342,14 +346,16 @@ private fun SegmentedButtons(type: PayloadType, onTypeChange: (PayloadType) -> U
 }
 
 @Composable
-private fun WarningCard(message: String) {
+private fun WarningCard(
+    @StringRes messageRes: Int = R.string.nfc_not_available
+) {
     ElevatedCard(
         colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.errorContainer
         )
     ) {
         Text(
-            message,
+            text = stringResource(messageRes),
             modifier = Modifier.padding(16.dp),
             color = MaterialTheme.colorScheme.onErrorContainer
         )
@@ -357,8 +363,15 @@ private fun WarningCard(message: String) {
 }
 
 @Composable
-private fun AssistCard(message: String) {
-    ElevatedCard { Text(message, modifier = Modifier.padding(16.dp)) }
+private fun AssistCard(
+    @StringRes messageRes: Int = R.string.assist_default
+) {
+    ElevatedCard {
+        Text(
+            text = stringResource(messageRes),
+            modifier = Modifier.padding(16.dp)
+        )
+    }
 }
 
 /** =========== Construcción del NDEF =========== */

@@ -65,7 +65,6 @@ fun HomeScreen(
                     text = buildString {
                         append(greeting)
                         userName?.takeIf { it.isNotBlank() }?.let { append(", $it") }
-                        append(" 👋")
                     },
                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
                     textAlign = TextAlign.Center
