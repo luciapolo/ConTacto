@@ -48,5 +48,7 @@ dependencies {
 
     // Permisos en runtime (opcional)
     implementation("com.google.accompanist:accompanist-permissions:0.36.0")
+
+    implementation("androidx.browser:browser:1.8.0")
 }
 

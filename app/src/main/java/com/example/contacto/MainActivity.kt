@@ -5,11 +5,12 @@ import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import com.example.contacto.nfc.NfcRewriteActivity
+import com.example.contacto.nfc.NfcReader          // <- lector con overlay + navegador
+import com.example.contacto.web.SescamGuideActivity // <- agente en WebView (opcional)
 import com.example.contacto.ui.screens.HomeScreen
 import com.example.contacto.ui.theme.ConTactoTheme
 import java.util.Locale
-import com.example.contacto.nfc.NfcRewriteActivity
-
 
 class MainActivity : ComponentActivity() {
     private lateinit var tts: TextToSpeech
@@ -26,11 +27,21 @@ class MainActivity : ComponentActivity() {
         setContent {
             ConTactoTheme {
                 HomeScreen(
-                    userName = null, // o "María" si lo tienes
+                    userName = null,
                     onRewriteNfcClick = {
-                        // Lanza tu flujo/pantalla de reescritura NFC
                         startActivity(Intent(this, NfcRewriteActivity::class.java))
-                        //startActivity(Intent("com.example.contacto.ACTION_REWRITE_NFC"))
+                    },
+                    // NUEVO: abre el lector NFC (al leer una URL del SESCAM, mostrará overlay + navegador)
+                    onOpenNfcReader = {
+                        startActivity(Intent(this, NfcReader::class.java))
+                    },
+                    // NUEVO (opcional): abre el agente integrado en WebView
+                    onOpenSescamGuide = {
+                        // Si quieres pasar una URL concreta de cita, cámbiala aquí.
+                        startActivity(
+                            Intent(this, SescamGuideActivity::class.java)
+                                .putExtra("url", "https://sescam.jccm.es")
+                        )
                     }
                 )
             }
@@ -39,7 +50,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        // Si necesitas reaccionar al nuevo intent, podrías guardar estado y recomponer
+        // Si más adelante manejas intents (deep links / NFC a Main), hazlo aquí.
     }
 
     override fun onDestroy() {

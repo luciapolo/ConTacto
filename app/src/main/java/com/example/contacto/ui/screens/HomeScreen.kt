@@ -7,6 +7,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Contactless
+import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -28,7 +29,9 @@ import java.util.Calendar
 @Composable
 fun HomeScreen(
     userName: String? = null,
-    onRewriteNfcClick: () -> Unit
+    onRewriteNfcClick: () -> Unit,
+    onOpenNfcReader: () -> Unit,      // NUEVO: lector NFC (navegador + overlay)
+    onOpenSescamGuide: () -> Unit     // NUEVO: agente dentro de la app (WebView)
 ) {
     val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
     val greeting = when (hour) {
@@ -36,7 +39,6 @@ fun HomeScreen(
         in 12..19 -> stringResource(R.string.greeting_afternoon)
         else -> stringResource(R.string.greeting_evening)
     }
-
 
     Scaffold { inner ->
         Box(
@@ -77,8 +79,7 @@ fun HomeScreen(
                     textAlign = TextAlign.Center
                 )
 
-
-                // Botón principal Reescribir NFC
+                // Botón: Reescribir NFC
                 Button(
                     onClick = onRewriteNfcClick,
                     modifier = Modifier
@@ -90,6 +91,32 @@ fun HomeScreen(
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.cta_rewrite_nfc))
                 }
+
+                // Botón: Leer NFC (abrir SESCAM + guía superpuesta)
+                Button(
+                    onClick = onOpenNfcReader,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = MaterialTheme.shapes.extraLarge
+                ) {
+                    Icon(Icons.Outlined.Contactless, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Leer NFC (Sescam + guía)")
+                }
+
+                // Botón: Guía SESCAM dentro de la app (WebView)
+                Button(
+                    onClick = onOpenSescamGuide,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = MaterialTheme.shapes.extraLarge
+                ) {
+                    Icon(Icons.Outlined.Public, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Guía SESCAM (en la app)")
+                }
             }
         }
     }
@@ -99,6 +126,10 @@ fun HomeScreen(
 @Composable
 private fun HomeScreenPreview() {
     MaterialTheme {
-        HomeScreen(onRewriteNfcClick = {})
+        HomeScreen(
+            onRewriteNfcClick = {},
+            onOpenNfcReader = {},
+            onOpenSescamGuide = {}
+        )
     }
 }

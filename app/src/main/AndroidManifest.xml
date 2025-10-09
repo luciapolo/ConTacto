@@ -30,6 +30,12 @@
             android:exported="true"
             android:label="Reescribir NFC" />
 
+        <activity
+            android:name=".web.SescamGuideActivity"
+            android:exported="true"
+            android:label="Guía Cita SESCAM" />
+
+
         <!-- Como el namespace es com.example.contacto, con .MainActivity basta -->
         <activity
             android:name=".MainActivity"
@@ -73,6 +79,9 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_config" />
         </service>
+        <service
+            android:name=".overlay.OverlayService"
+            android:exported="false" />
 
     </application>
 </manifest>
