@@ -10,10 +10,8 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import com.example.contacto.nfc.NfcRewriteActivity
 import com.example.contacto.ui.screens.HomeScreen
 import com.example.contacto.ui.theme.ConTactoTheme
-
 class MainActivity : ComponentActivity() {
     private var nfcAdapter: NfcAdapter? = null
     private var pendingIntent: PendingIntent? = null
@@ -52,11 +50,14 @@ class MainActivity : ComponentActivity() {
                 HomeScreen(
                     userName = null,
                     onRewriteNfcClick = {
-                        startActivity(Intent(this, NfcRewriteActivity::class.java))
-                    }
+                        startActivity(Intent(this, com.example.contacto.nfc.NfcRewriteActivity::class.java))
+                    },
+                    onReadNowClick = {startActivity(Intent(this, com.example.contacto.nfc.NfcReadNowActivity::class.java))},
+                    onOpenSettingsClick = {startActivity(Intent(this, com.example.contacto.data.SettingsActivity::class.java))}
                 )
             }
         }
+
     }
 
     override fun onResume() {
@@ -84,7 +85,7 @@ class MainActivity : ComponentActivity() {
 
         if (tag != null) {
             startActivity(
-                Intent(this, com.example.contacto.nfc.NfcReader::class.java).apply {
+                Intent(this, com.example.contacto.nfc.NfcReaderActivity::class.java).apply {
                     putExtra(NfcAdapter.EXTRA_TAG, tag)
                 }
             )

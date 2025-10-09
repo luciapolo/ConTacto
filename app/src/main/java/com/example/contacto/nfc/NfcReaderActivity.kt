@@ -14,7 +14,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 
 
-class NfcReader : ComponentActivity() {
+class NfcReaderActivity : ComponentActivity() {
 
     private var pendingTelUri: Uri? = null
 
