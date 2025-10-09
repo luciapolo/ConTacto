@@ -38,7 +38,6 @@ class NfcSettingsViewModel(app: Application) : AndroidViewModel(app) {
     fun setOutside(enabled: Boolean) {
         _outside.update { enabled }
         setNfcOutsideReadingEnabled(getApplication(), enabled)
-        // TODO: persiste en DataStore si lo necesitas
     }
 }
 
