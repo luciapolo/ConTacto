@@ -1,7 +1,6 @@
 package com.example.contacto.web
 
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -9,7 +8,6 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
-import android.view.Gravity
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -20,7 +18,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.example.contacto.R
-import org.json.JSONObject            // <-- IMPORT CLAVE
+import org.json.JSONObject
 import java.util.Locale
 
 class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
@@ -28,127 +26,130 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private lateinit var webView: WebView
     private lateinit var tts: TextToSpeech
     private var speech: SpeechRecognizer? = null
-    private var isListening = false
+    private var launchedConversation = false
 
     private val requestAudioPerm = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (!granted) Toast.makeText(this, "Permiso de micrófono denegado", Toast.LENGTH_SHORT).show()
+        if (!granted) {
+            Toast.makeText(this, "Permiso de micrófono denegado", Toast.LENGTH_SHORT).show()
+        }
+        // Aunque no haya permiso, seguimos guiando por voz (solo TTS).
+        startConversationIfReady()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Layout: WebView + 2 botones flotantes
-        val root = FrameLayout(this).apply {
-            layoutParams = FrameLayout.LayoutParams(
+        // Raíz simple: WebView + 2 botones flotantes (Repetir y Mic)
+        val root = FrameLayout(this)
+        setContentView(root)
+
+        webView = WebView(this)
+        root.addView(
+            webView,
+            FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
-        }
-
-        webView = WebView(this)
-        root.addView(webView, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
-        ))
+        )
 
         val btnRepeat = ImageButton(this).apply {
             setImageResource(android.R.drawable.ic_media_play)
             contentDescription = "Repetir instrucción"
-            // Si no quieres drawable, comenta la línea de abajo o crea el XML del paso 2
-            setBackgroundResource(R.drawable.btn_bg_round)
+            setBackgroundResource(android.R.drawable.btn_default_small)
             setOnClickListener { evaluateJs("window.__guide?.repeatCurrent();") }
         }
         val btnMic = ImageButton(this).apply {
             setImageResource(android.R.drawable.ic_btn_speak_now)
             contentDescription = "Dictar"
-            setBackgroundResource(R.drawable.btn_bg_round)
-            setOnClickListener { toggleDictation() }
+            setBackgroundResource(android.R.drawable.btn_default_small)
+            setOnClickListener { askActionFlow(force = true) }
         }
-
-        val lp1 = FrameLayout.LayoutParams(160, 160).apply {
-            marginEnd = 32; bottomMargin = 220; gravity = Gravity.BOTTOM or Gravity.END
+        // Coloca los botones abajo a la derecha
+        FrameLayout(this).apply {
+            addView(btnRepeat, FrameLayout.LayoutParams(150, 150).apply {
+                gravity = android.view.Gravity.END or android.view.Gravity.BOTTOM
+                rightMargin = 32; bottomMargin = 220
+            })
+            addView(btnMic, FrameLayout.LayoutParams(150, 150).apply {
+                gravity = android.view.Gravity.END or android.view.Gravity.BOTTOM
+                rightMargin = 32; bottomMargin = 40
+            })
+            root.addView(this)
         }
-        val lp2 = FrameLayout.LayoutParams(160, 160).apply {
-            marginEnd = 32; bottomMargin = 40;  gravity = Gravity.BOTTOM or Gravity.END
-        }
-        root.addView(btnRepeat, lp1)
-        root.addView(btnMic, lp2)
-
-        setContentView(root)
 
         tts = TextToSpeech(this, this)
+
+        // Permiso de micrófono si lo tenemos que pedir
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED) {
+            != PackageManager.PERMISSION_GRANTED
+        ) {
             requestAudioPerm.launch(Manifest.permission.RECORD_AUDIO)
         }
 
         setupWebView()
-        webView.loadUrl("https://sescam.jccm.es")
+
+        // Si te pasan una URL concreta desde el NFC, úsala. Si no, abre la home.
+        val startUrl = intent.getStringExtra("url") ?: "https://sescam.jccm.es"
+        webView.loadUrl(startUrl)
     }
 
     override fun onDestroy() {
         try { speech?.destroy() } catch (_: Exception) {}
-        try { tts.shutdown() } catch (_: Exception) {}
+        if (::tts.isInitialized) {
+            try { tts.stop(); tts.shutdown() } catch (_: Exception) {}
+        }
         super.onDestroy()
     }
 
+    // ---- TTS ----
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             tts.language = Locale("es", "ES")
-            speak("Guía del SESCAM. Te iré indicando los pasos para pedir cita.")
+            speak("Guía del SESCAM. Te iré indicando los pasos.")
         }
     }
 
     private fun speak(text: String) {
         if (::tts.isInitialized) {
-            if (Build.VERSION.SDK_INT >= 21) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "guide")
-            else @Suppress("DEPRECATION") tts.speak(text, TextToSpeech.QUEUE_FLUSH, null)
+            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "guide")
         }
     }
 
-    private fun toggleDictation() {
+    // ---- Reconocimiento de voz (escucha de una sola vez) ----
+    private fun listenOnce(onResult: (String) -> Unit) {
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            Toast.makeText(this, "Reconocimiento de voz no disponible", Toast.LENGTH_SHORT).show()
+            speak("El reconocimiento de voz no está disponible en este dispositivo.")
             return
         }
         if (speech == null) {
-            speech = SpeechRecognizer.createSpeechRecognizer(this).apply {
-                setRecognitionListener(object : RecognitionListener {
-                    override fun onReadyForSpeech(params: Bundle?) {}
-                    override fun onBeginningOfSpeech() {}
-                    override fun onRmsChanged(rmsdB: Float) {}
-                    override fun onBufferReceived(buffer: ByteArray?) {}
-                    override fun onEndOfSpeech() {}
-                    override fun onError(error: Int) { isListening = false; speak("No te he entendido.") }
-                    override fun onResults(results: Bundle) {
-                        isListening = false
-                        val text = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                            ?.firstOrNull() ?: return
-                        val js = "window.__guide && window.__guide.fillActive(${JSONObject.quote(text)});"
-                        evaluateJs(js)
-                    }
-                    override fun onPartialResults(partialResults: Bundle) {}
-                    override fun onEvent(eventType: Int, params: Bundle?) {}
-                })
-            }
+            speech = SpeechRecognizer.createSpeechRecognizer(this)
         }
-        if (!isListening) {
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-ES")
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        speech?.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(params: Bundle?) {}
+            override fun onBeginningOfSpeech() {}
+            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onBufferReceived(buffer: ByteArray?) {}
+            override fun onEndOfSpeech() {}
+            override fun onError(error: Int) { speak("No te he entendido."); }
+            override fun onResults(results: Bundle) {
+                val text = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
+                if (!text.isNullOrBlank()) onResult(text) else speak("No te he entendido.")
             }
-            speech?.startListening(intent)   // <-- ahora el tipo coincide
-            isListening = true
-            speak("Te escucho. Di el dato a rellenar.")
-        } else {
-            speech?.stopListening()
-            isListening = false
+            override fun onPartialResults(partialResults: Bundle) {}
+            override fun onEvent(eventType: Int, params: Bundle?) {}
+        })
+
+        val intent = android.content.Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-ES")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         }
+        speech?.startListening(intent)
     }
 
+    // ---- WebView + Agente JS ----
     private fun setupWebView() {
         with(webView.settings) {
             javaScriptEnabled = true
@@ -160,14 +161,15 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
         WebView.setWebContentsDebuggingEnabled(true)
 
+        // Interfaces nativas accesibles desde JS (para hablar / toast si quisieras)
         webView.addJavascriptInterface(object {
             @JavascriptInterface fun speak(text: String) { runOnUiThread { this@SescamGuideActivity.speak(text) } }
-            @JavascriptInterface fun toast(text: String) { runOnUiThread { Toast.makeText(this@SescamGuideActivity, text, Toast.LENGTH_SHORT).show() } }
         }, "Android")
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {
                 injectGuideJs()
+                startConversationIfReady()
             }
         }
     }
@@ -177,104 +179,114 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         else webView.loadUrl("javascript:$code")
     }
 
+    /** Inyecta funciones JS para localizar campo CIP y botones, y poder hacer click desde Kotlin. */
     private fun injectGuideJs() {
         val js = """
-        (function(){
-          if (window.__guide) { window.__guide.start(); return; }
+            (function(){
+              if (window.__guide) return;
 
-          const say = (t)=>{ try{ Android.speak(String(t)); }catch(e){} }
-          const toast = (t)=>{ try{ Android.toast(String(t)); }catch(e){} }
+              function normalize(s){
+                return (s||"").toLowerCase()
+                  .normalize("NFD").replace(/\p{Diacritic}/gu,"");
+              }
 
-          // Estilos para destacar el objetivo
-          const styleId = "__guide_style";
-          if (!document.getElementById(styleId)) {
-            const st = document.createElement("style");
-            st.id = styleId;
-            st.textContent = `
-              .__guide-focus { outline: 4px solid #2dd4bf !important; box-shadow: 0 0 0 6px rgba(45,212,191,.35) !important; scroll-margin: 100px; }
-              .__guide-hint { position: absolute; background: #111827; color: #fff; padding: 8px 12px; border-radius: 12px; font-size: 14px; z-index: 999999; }
-            `;
-            document.documentElement.appendChild(st);
-          }
+              function byTextInButtons(needle){
+                const n = normalize(needle);
+                const btns = document.querySelectorAll("button, a, input[type=button], input[type=submit]");
+                for (const b of btns) {
+                  const t = normalize(b.innerText || b.value || "");
+                  if (t.includes(n)) return b;
+                }
+                return null;
+              }
 
-          // Heurísticas de selectores
-          const SELECTORS = [
-            { key:"citaBtn",  q:["a[href*='cita']", "a:has(> span:matches('Cita|Cita previa'))", "a[title*='cita' i]" ], stepText:"Pulsa en Cita Previa." },
-            { key:"dni",      q:["input[name*='dni' i]", "input[id*='dni' i]", "input[name*='nif' i]", "input[id*='nif' i]"], stepText:"Escribe tu DNI o NIF." },
-            { key:"cip",      q:["input[name*='cip' i]", "input[id*='cip' i]", "input[name*='tarjeta' i]"], stepText:"Escribe tu CIP o número de tarjeta sanitaria." },
-            { key:"fecha",    q:["input[type='date']", "input[name*='fecha' i]"], stepText:"Selecciona tu fecha de nacimiento." },
-            { key:"siguiente",q:["button[type='submit']", "input[type='submit']", "button:matches('Siguiente|Confirmar|Entrar')", "a:matches('Continuar|Siguiente')"], stepText:"Pulsa Siguiente para continuar." }
-          ];
+              function findCip(){
+                let el = document.querySelector("input[placeholder*='CIP' i], input[placeholder*='Introduzca su CIP' i]");
+                if (!el) el = document.querySelector("input[name*='cip' i], input[id*='cip' i]");
+                if (!el) {
+                  const ins = document.querySelectorAll("input[type='text'], input");
+                  for (const i of ins) {
+                    const p = normalize(i.placeholder || "");
+                    if (p.includes("cip") || p.includes("introduzca su cip")) return i;
+                  }
+                }
+                return el;
+              }
 
-          // Polyfill :matches -> :is
-          const qAll = (sel)=>{ try { return document.querySelectorAll(sel.replace(/:matches/g, ":is")); } catch(e) { return []; } };
+              let chosen = null;
 
-          function findOne(arr){
-            for (const s of arr) {
-              const els = qAll(s);
-              if (els && els.length) return els[0];
-            }
-            return null;
-          }
-
-          function placeHint(el, text){
-            removeHints();
-            const r = el.getBoundingClientRect();
-            const hint = document.createElement('div');
-            hint.className = "__guide-hint";
-            hint.textContent = text;
-            hint.style.left = (window.scrollX + r.left) + "px";
-            hint.style.top  = (window.scrollY + r.bottom + 6) + "px";
-            document.body.appendChild(hint);
-          }
-          function removeHints(){
-            document.querySelectorAll(".__guide-hint").forEach(n=>n.remove());
-          }
-
-          let current = null;
-          let idx = 0;
-          const order = ["citaBtn","dni","cip","fecha","siguiente"];
-
-          function focusEl(el, text){
-            if (!el) return;
-            document.querySelectorAll(".__guide-focus").forEach(n=>n.classList.remove("__guide-focus"));
-            el.classList.add("__guide-focus");
-            el.scrollIntoView({behavior:"smooth", block:"center"});
-            placeHint(el, text);
-            say(text);
-            if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") el.focus();
-            current = el;
-          }
-
-          function next(){
-            if (idx >= order.length) { say("Proceso completado o siguiente pantalla."); return; }
-            const item = SELECTORS.find(s=>s.key===order[idx]);
-            const el = findOne(item.q);
-            if (el) focusEl(el, item.stepText);
-            idx++;
-          }
-
-          function start(){ idx = 0; next(); }
-
-          // Avanza cuando se rellena un campo
-          document.addEventListener("input", (e)=>{
-            if (e.target === current && (e.target.value || "").length >= 2) {
-              setTimeout(next, 300);
-            }
-          }, true);
-
-          // API pública para Android
-          window.__guide = {
-            start,
-            repeatCurrent(){ if (current) { const txt = document.querySelector(".__guide-hint")?.textContent || "Sigue la instrucción en pantalla."; say(txt); } },
-            fillActive(text){ if (current && ('value' in current)) { current.value = text; current.dispatchEvent(new Event('input',{bubbles:true})); } }
-          };
-
-          start();
-        })();
-    """.trimIndent()
-
+              window.__guide = {
+                repeatCurrent: function(){
+                  // Mejoramos si quieres guardar el último texto
+                  try{ Android.speak("Repite: sigue la instrucción actual."); }catch(e){}
+                },
+                chooseAction: function(act){
+                  const a = normalize(act||"");
+                  if (a.startsWith("pedir")) {
+                    chosen = byTextInButtons("pedir cita") || byTextInButtons("pedir");
+                  } else {
+                    chosen = byTextInButtons("ver citas") || byTextInButtons("ver");
+                  }
+                  if (chosen) { chosen.scrollIntoView({behavior:"smooth", block:"center"}); }
+                  return !!chosen;
+                },
+                fillCip: function(cip){
+                  const el = findCip();
+                  if (!el) return false;
+                  el.focus();
+                  el.value = cip;
+                  el.dispatchEvent(new Event("input", {bubbles:true}));
+                  return true;
+                },
+                clickChosen: function(){
+                  if (chosen) { chosen.click(); return true; }
+                  return false;
+                }
+              };
+            })();
+        """.trimIndent()
         evaluateJs(js)
     }
 
+    // ---- Conversación principal: preguntar → decidir → pedir CIP → rellenar → click ----
+    private fun startConversationIfReady() {
+        if (launchedConversation) return
+        launchedConversation = true
+        askActionFlow(force = false)
+    }
+
+    /** Si force=true, repite la pregunta de acción aunque ya se haya hecho. */
+    private fun askActionFlow(force: Boolean) {
+        if (force) launchedConversation = false
+        if (launchedConversation) return
+        launchedConversation = true
+
+        speak("¿Qué quieres hacer? Di: pedir cita o ver citas.")
+        listenOnce { said ->
+            val action = when {
+                said.contains("pedir", true) -> "pedir"
+                said.contains("ver", true)    -> "ver"
+                else -> null
+            }
+            if (action == null) {
+                launchedConversation = false
+                speak("No te he entendido. Di pedir cita o ver citas.")
+                askActionFlow(force = false)
+                return@listenOnce
+            }
+
+            // 1) Elegimos botón (Pedir cita / Ver citas)
+            evaluateJs("window.__guide && window.__guide.chooseAction(${JSONObject.quote(action)});")
+
+            // 2) Pedimos CIP, lo limpiamos y lo rellenamos
+            speak("De acuerdo. Ahora dime tu C I P.")
+            listenOnce { cipRaw ->
+                val cip = cipRaw.uppercase().replace("[^A-Z0-9]".toRegex(), "")
+                evaluateJs("window.__guide && window.__guide.fillCip(${JSONObject.quote(cip)});")
+                speak("CIP introducido. Pulso el botón.")
+                // 3) Pulsamos
+                evaluateJs("window.__guide && window.__guide.clickChosen();")
+            }
+        }
+    }
 }

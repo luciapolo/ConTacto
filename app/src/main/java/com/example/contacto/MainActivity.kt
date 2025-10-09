@@ -45,7 +45,19 @@ class MainActivity : ComponentActivity() {
                     }
                 )
             }
+            HomeScreen(
+                userName = null,
+                onRewriteNfcClick = { startActivity(Intent(this, NfcRewriteActivity::class.java)) },
+                onOpenNfcReader = { startActivity(Intent(this, com.example.contacto.nfc.NfcReader::class.java)) }, // si quieres mantener lector NFC
+                onOpenSescamGuide = {
+                    startActivity(
+                        Intent(this, SescamGuideActivity::class.java)
+                            .putExtra("url", "https://sescam.jccm.es/misaluddigital/app/inicio") // pon aquí la URL que prefieras
+                    )
+                }
+            )
         }
+
     }
 
     override fun onNewIntent(intent: Intent) {
