@@ -27,9 +27,6 @@ class MainActivity : ComponentActivity() {
             ConTactoTheme {
                 HomeScreen(
                     userName = null, // o "María" si lo tienes
-                    onSpeak = { text ->
-                        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "utt-home-1")
-                    },
                     onRewriteNfcClick = {
                         // Lanza tu flujo/pantalla de reescritura NFC
                         startActivity(Intent(this, NfcRewriteActivity::class.java))
