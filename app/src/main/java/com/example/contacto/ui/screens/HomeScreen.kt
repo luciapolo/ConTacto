@@ -77,6 +77,7 @@ fun HomeScreen(
                     textAlign = TextAlign.Center
                 )
 
+
                 // Botón principal Reescribir NFC
                 Button(
                     onClick = onRewriteNfcClick,
