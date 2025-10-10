@@ -1,261 +1,347 @@
 package com.example.contacto.nfc
 
-import android.app.PendingIntent
-import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.outlined.Contactless
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.ui.graphics.graphicsLayer
+
+import android.Manifest
+import android.app.Activity
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.nfc.NdefMessage
 import android.nfc.NdefRecord
 import android.nfc.NfcAdapter
-import android.nfc.Tag
 import android.nfc.tech.Ndef
-import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
-import android.util.Log
-import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
-import java.nio.charset.Charset
-import java.util.Locale
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
+import com.example.contacto.web.SescamGuideActivity
 
-class NfcReadNowActivity : AppCompatActivity() {
+class NfcReadNowActivity : ComponentActivity() {
 
-    companion object {
+    // Dominios válidos del SESCAM
+    private val SESCAM_HOSTS = setOf("sescam.jccm.es", "www.sescam.jccm.es")
 
-        const val EXTRA_START_URL = "com.example.contacto.nfc.EXTRA_START_URL"
+    // Guardamos un tel: pendiente mientras pedimos permiso
+    private var pendingTelUri: Uri? = null
 
-        private const val TAG_LOG = "NfcReadNow"
+    private val callPermLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        pendingTelUri?.let { tel ->
+            if (granted) startActivity(Intent(Intent.ACTION_CALL, tel))
+            else startActivity(Intent(Intent.ACTION_DIAL, tel)) // fallback sin permiso
+            pendingTelUri = null
+        }
     }
-
-    private var nfcAdapter: NfcAdapter? = null
-    private var pendingIntent: PendingIntent? = null
-
-    // (opcional) URL de inicio que te envían al abrir la Activity
-    private var startUrl: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Si tienes un layout, descomenta:
-        // setContentView(R.layout.activity_nfc_read_now)
+        setContent { MaterialTheme { ReadNowScreen(this, ::onActionTel, ::onActionLink) } }
+    }
 
-        nfcAdapter = NfcAdapter.getDefaultAdapter(this)
-        if (nfcAdapter == null) {
-            toast("Este dispositivo no soporta NFC")
-            finish()
-            return
-        }
-        if (nfcAdapter?.isEnabled != true) {
-            toast("NFC desactivado. Actívalo en Ajustes.")
-            // Opcional: abrir ajustes NFC
-            try {
-                startActivity(Intent(Settings.ACTION_NFC_SETTINGS))
-            } catch (_: Exception) {
-            }
-        }
+    /** Acción de llamada */
+    private fun onActionTel(tel: Uri) {
+        val granted = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.CALL_PHONE
+        ) == PackageManager.PERMISSION_GRANTED
 
-        // Lee la URL de inicio si te la pasan
-        startUrl = intent.getStringExtra(EXTRA_START_URL)
-
-        // Configura Foreground Dispatch para recibir tags cuando esta Activity está al frente
-        pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val flags = PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            PendingIntent.getActivity(this, 0, Intent(this, javaClass).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), flags)
+        if (granted) {
+            startActivity(Intent(Intent.ACTION_CALL, tel))
         } else {
-            @Suppress("DEPRECATION")
-            PendingIntent.getActivity(this, 0, Intent(this, javaClass).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
-                PendingIntent.FLAG_IMMUTABLE)
-        }
-
-        // Si nos lanzaron ya con un tag (por ejemplo desde intent-filter)
-        handleIntent(intent)
-    }
-
-    override fun onResume() {
-        super.onResume()
-        try {
-            nfcAdapter?.enableForegroundDispatch(this, pendingIntent, null, null)
-        } catch (e: Exception) {
-            Log.w(TAG_LOG, "No se pudo activar ForegroundDispatch: ${e.message}")
+            pendingTelUri = tel
+            callPermLauncher.launch(Manifest.permission.CALL_PHONE)
         }
     }
 
-    override fun onPause() {
-        super.onPause()
-        try {
-            nfcAdapter?.disableForegroundDispatch(this)
-        } catch (_: Exception) {
-        }
-    }
+    /** Acción abrir enlace o lanzar guía si es SESCAM */
+    private fun onActionLink(uri: Uri) {
+        val scheme = uri.scheme?.lowercase()
+        if (scheme == "http" || scheme == "https") {
+            val host = (uri.host ?: "").lowercase()
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        handleIntent(intent)
-    }
-
-    private fun handleIntent(intent: Intent?) {
-        if (intent == null) return
-        val action = intent.action ?: return
-
-        // Guarda/actualiza el valor en caso de relanzos con extras
-        startUrl = intent.getStringExtra(EXTRA_START_URL) ?: startUrl
-
-        if (action == NfcAdapter.ACTION_NDEF_DISCOVERED ||
-            action == NfcAdapter.ACTION_TECH_DISCOVERED ||
-            action == NfcAdapter.ACTION_TAG_DISCOVERED
-        ) {
-            val tag: Tag? = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG)
-            if (tag == null) {
-                toast("No se pudo leer el tag NFC")
-                return
-            }
-            readNdefFromTag(tag)
-        }
-    }
-
-    private fun readNdefFromTag(tag: Tag) {
-        try {
-            val ndef = Ndef.get(tag)
-            if (ndef != null) {
-                ndef.connect()
-                val message: NdefMessage? = ndef.cachedNdefMessage ?: ndef.ndefMessage
-                ndef.close()
-                if (message == null) {
-                    toast("Tag sin mensajes NDEF")
-                    return
+            val looksLikeSescam = host in SESCAM_HOSTS
+            if (looksLikeSescam) {
+                // Lanza la guía con la URL del tag NFC
+                val i = Intent(this, SescamGuideActivity::class.java).apply {
+                    putExtra(SescamGuideActivity.EXTRA_START_URL, uri.toString())
+                    // opcionalmente puedes añadir flags si vienes de otra task:
+                    // addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
-                onNdefMessage(message)
+                startActivity(i)
             } else {
-                toast("Tag NDEF no soportado o vacío")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG_LOG, "Error leyendo NDEF: ${e.message}", e)
-            toast("Error leyendo el tag")
-        }
-    }
-
-    private fun onNdefMessage(message: NdefMessage) {
-        // Procesa todos los records
-        val parts = mutableListOf<String>()
-        for (record in message.records) {
-            when {
-                record.tnf == NdefRecord.TNF_WELL_KNOWN && record.type.contentEquals(NdefRecord.RTD_TEXT) -> {
-                    readTextRecord(record)?.let { parts.add(it) }
-                }
-                record.tnf == NdefRecord.TNF_WELL_KNOWN && record.type.contentEquals(NdefRecord.RTD_URI) -> {
-                    readUriRecord(record)?.let { parts.add(it.toString()) }
-                }
-                record.tnf == NdefRecord.TNF_ABSOLUTE_URI -> {
-                    readAbsoluteUri(record)?.let { parts.add(it.toString()) }
-                }
-                else -> {
-                    // otros tipos; podemos ignorar o loguear
-                    Log.d(TAG_LOG, "Record no manejado: tnf=${record.tnf} type=${String(record.type)}")
-                }
+                // Comportamiento genérico para otros enlaces
+                val view = Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)
+                startActivity(view)
             }
         }
-
-        if (parts.isEmpty()) {
-            toast("No se encontró texto/URI en el tag")
-            return
-        }
-
-        // Heurística simple: si hay una URL válida, la usamos; si no, mostramos el texto.
-        val firstUrl = parts.firstOrNull { it.startsWith("http://") || it.startsWith("https://") }
-        if (firstUrl != null) {
-            // Si nos pasaron una startUrl y no coincide, decide qué hacer (abrir leída, respetar startUrl, etc.)
-            val toOpen = firstUrl
-            try {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(toOpen)))
-            } catch (e: Exception) {
-                Log.w(TAG_LOG, "No se pudo abrir la URL: $toOpen")
-                toast("Leído: $toOpen")
-            }
-        } else {
-            // Muestra el contenido textual
-            toast("Leído: ${parts.joinToString(" | ")}")
-        }
-    }
-
-    private fun readTextRecord(record: NdefRecord): String? {
-        return try {
-            val payload = record.payload ?: return null
-            // Formato NDEF texto: status byte + lang code + texto
-            val status = payload[0].toInt()
-            val isUtf8 = (status and 0x80) == 0
-            val langLength = status and 0x3F
-            val textEncoding = if (isUtf8) Charset.forName("UTF-8") else Charset.forName("UTF-16")
-            val text = String(payload, 1 + langLength, payload.size - 1 - langLength, textEncoding)
-            text
-        } catch (e: Exception) {
-            Log.w(TAG_LOG, "Error leyendo text record: ${e.message}")
-            null
-        }
-    }
-
-    private fun readUriRecord(record: NdefRecord): Uri? {
-        return try {
-            val payload = record.payload ?: return null
-            // NDEF URI: primer byte es el código de prefijo
-            val prefix = uriPrefix(payload[0].toInt())
-            val uri = String(payload, 1, payload.size - 1, Charsets.UTF_8)
-            Uri.parse(prefix + uri)
-        } catch (e: Exception) {
-            Log.w(TAG_LOG, "Error leyendo URI record: ${e.message}")
-            null
-        }
-    }
-
-    private fun readAbsoluteUri(record: NdefRecord): Uri? {
-        return try {
-            Uri.parse(String(record.payload ?: return null, Charsets.UTF_8))
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun uriPrefix(code: Int): String {
-        // Tabla de prefijos según especificación NDEF (RTD_URI)
-        return when (code) {
-            0x00 -> ""
-            0x01 -> "http://www."
-            0x02 -> "https://www."
-            0x03 -> "http://"
-            0x04 -> "https://"
-            0x05 -> "tel:"
-            0x06 -> "mailto:"
-            0x07 -> "ftp://anonymous:anonymous@"
-            0x08 -> "ftp://ftp."
-            0x09 -> "ftps://"
-            0x0A -> "sftp://"
-            0x0B -> "smb://"
-            0x0C -> "nfs://"
-            0x0D -> "ftp://"
-            0x0E -> "dav://"
-            0x0F -> "news:"
-            0x10 -> "telnet://"
-            0x11 -> "imap:"
-            0x12 -> "rtsp://"
-            0x13 -> "urn:"
-            0x14 -> "pop:"
-            0x15 -> "sip:"
-            0x16 -> "sips:"
-            0x17 -> "tftp:"
-            0x18 -> "btspp://"
-            0x19 -> "btl2cap://"
-            0x1A -> "btgoep://"
-            0x1B -> "tcpobex://"
-            0x1C -> "irdaobex://"
-            0x1D -> "file://"
-            0x1E -> "urn:epc:id:"
-            0x1F -> "urn:epc:tag:"
-            0x20 -> "urn:epc:pat:"
-            0x21 -> "urn:epc:raw:"
-            0x22 -> "urn:epc:"
-            0x23 -> "urn:nfc:"
-            else -> ""
-        }
-    }
-
-    private fun toast(msg: String) {
-        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 }
+
+@Composable
+private fun ReadNowScreen(
+    activity: Activity,
+    onTel: (Uri) -> Unit,
+    onLink: (Uri) -> Unit
+) {
+    // ---- UI state ----
+    var status by remember { mutableStateOf("Acerca una etiqueta…") }
+    var statusType by remember { mutableStateOf(StatusType.Idle) }
+
+    // Animación de pulso para el icono NFC
+    val pulse = rememberInfiniteTransition(label = "pulse")
+    val scale by pulse.animateFloat(
+        initialValue = 0.95f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "scale"
+    )
+    val glowAlpha by pulse.animateFloat(
+        initialValue = 0.18f,
+        targetValue = 0.35f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "alpha"
+    )
+
+    // ---- NFC: Reader Mode mientras esta pantalla está en primer plano ----
+    DisposableEffect(Unit) {
+        val adapter = NfcAdapter.getDefaultAdapter(activity)
+        val callback = NfcAdapter.ReaderCallback { tag ->
+            val ndef = Ndef.get(tag)
+            val message: NdefMessage? = try {
+                ndef?.connect()
+                ndef?.cachedNdefMessage ?: ndef?.ndefMessage
+            } catch (_: Exception) { null } finally {
+                try { ndef?.close() } catch (_: Exception) {}
+            }
+
+            val (text, uri) = extractTextAndUri(message)
+            val scheme = uri?.scheme?.lowercase()
+
+            when {
+                scheme == "tel" -> {
+                    val u = uri
+                    activity.runOnUiThread {
+                        status = "Detectado teléfono: ${u!!.schemeSpecificPart}"
+                        statusType = StatusType.Tel
+                    }
+                    onTel(u!!)
+                }
+                scheme == "http" || scheme == "https" -> {
+                    val u = uri
+                    activity.runOnUiThread {
+                        status = "Abriendo enlace…"
+                        statusType = StatusType.Link
+                    }
+                    onLink(u!!)
+                }
+                text?.trim()?.startsWith("tel:", ignoreCase = true) == true -> {
+                    val tel = text.trim().toUri()
+                    activity.runOnUiThread {
+                        status = "Detectado teléfono: ${tel.schemeSpecificPart}"
+                        statusType = StatusType.Tel
+                    }
+                    onTel(tel)
+                }
+                text?.trim()?.startsWith("http", ignoreCase = true) == true -> {
+                    val link = text.trim().toUri()
+                    activity.runOnUiThread {
+                        status = "Abriendo enlace…"
+                        statusType = StatusType.Link
+                    }
+                    onLink(link)
+                }
+                else -> {
+                    activity.runOnUiThread {
+                        status = if (message != null) "Etiqueta NDEF sin datos útiles"
+                        else "Etiqueta detectada (no NDEF)"
+                        statusType = StatusType.Neutral
+                    }
+                }
+            }
+        }
+
+        adapter?.enableReaderMode(
+            activity,
+            callback,
+            NfcAdapter.FLAG_READER_NFC_A or
+                    NfcAdapter.FLAG_READER_NFC_B or
+                    NfcAdapter.FLAG_READER_NFC_F or
+                    NfcAdapter.FLAG_READER_NFC_V or
+                    NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS,
+            null
+        )
+        onDispose { adapter?.disableReaderMode(activity) }
+    }
+
+    // ---- UI ----
+    Surface(Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(20.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.extraLarge
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+
+                    // Glow + icono
+                    Box(contentAlignment = Alignment.Center) {
+                        Box(
+                            modifier = Modifier
+                                .size(160.dp * scale)
+                                .graphicsLayer { alpha = glowAlpha }
+                                .background(
+                                    color = when (statusType) {
+                                        StatusType.Tel -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.25f)
+                                        StatusType.Link -> MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                                        StatusType.Neutral, StatusType.Idle -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.20f)
+                                    },
+                                    shape = CircleShape
+                                )
+                        )
+                        Icon(
+                            imageVector = Icons.Outlined.Contactless,
+                            contentDescription = null,
+                            modifier = Modifier.size(96.dp),
+                            tint = when (statusType) {
+                                StatusType.Tel -> MaterialTheme.colorScheme.tertiary
+                                StatusType.Link -> MaterialTheme.colorScheme.primary
+                                StatusType.Neutral, StatusType.Idle -> MaterialTheme.colorScheme.secondary
+                            }
+                        )
+                    }
+
+                    Text(
+                        text = "Lectura dentro de la app",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    // Chip de estado
+                    AssistChip(
+                        onClick = {},
+                        label = { Text(status) },
+                        leadingIcon = {
+                            val icon = when (statusType) {
+                                StatusType.Tel -> Icons.Default.Call
+                                StatusType.Link -> Icons.AutoMirrored.Filled.OpenInNew
+                                StatusType.Neutral, StatusType.Idle -> Icons.Outlined.Contactless
+                            }
+                            Icon(icon, contentDescription = null)
+                        },
+                        colors = AssistChipDefaults.assistChipColors(
+                            labelColor = MaterialTheme.colorScheme.onSurface,
+                            containerColor = when (statusType) {
+                                StatusType.Tel -> MaterialTheme.colorScheme.tertiaryContainer
+                                StatusType.Link -> MaterialTheme.colorScheme.primaryContainer
+                                StatusType.Neutral, StatusType.Idle -> MaterialTheme.colorScheme.secondaryContainer
+                            }
+                        )
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Button(
+                        onClick = { activity.finish() },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.extraLarge
+                    ) {
+                        Text("Cerrar")
+                    }
+                }
+            }
+        }
+    }
+}
+
+private enum class StatusType { Idle, Tel, Link, Neutral }
+
+/* ----------------- Helpers NDEF ----------------- */
+
+private data class NdefData(val text: String?, val uri: Uri?)
+
+private fun extractTextAndUri(msg: NdefMessage?): NdefData {
+    if (msg == null) return NdefData(null, null)
+    var text: String? = null
+    var uri: Uri? = null
+    for (r in msg.records) {
+        // Texto (RTD_TEXT)
+        if (text == null &&
+            r.tnf == NdefRecord.TNF_WELL_KNOWN &&
+            r.type?.contentEquals(NdefRecord.RTD_TEXT) == true
+        ) {
+            try {
+                val p = r.payload
+                val status = p[0].toInt()
+                val isUtf16 = (status and 0x80) != 0
+                val langLen = status and 0x3F
+                val bytes = p.copyOfRange(1 + langLen, p.size)
+                text = String(bytes, if (isUtf16) Charsets.UTF_16 else Charsets.UTF_8)
+            } catch (_: Exception) {}
+        }
+        // URI (RTD_URI o Absolute)
+        if (uri == null) {
+            when {
+                r.tnf == NdefRecord.TNF_WELL_KNOWN &&
+                        r.type?.contentEquals(NdefRecord.RTD_URI) == true -> {
+                    uri = decodeWellKnownUri(r)
+                }
+                r.tnf == NdefRecord.TNF_ABSOLUTE_URI -> {
+                    try { uri = (String(r.payload, Charsets.UTF_8).toUri()) } catch (_: Exception) {}
+                }
+            }
+        }
+        if (text != null && uri != null) break
+    }
+    return NdefData(text, uri)
+}
+
+private fun decodeWellKnownUri(record: NdefRecord): Uri? = try {
+    val p = record.payload
+    val prefixCode = p[0].toInt() and 0xFF
+    val uriBody = String(p, 1, p.size - 1, Charsets.UTF_8)
+    val prefix = prefixes.getOrElse(prefixCode) { "" }
+    (prefix + uriBody).toUri()
+} catch (_: Exception) { null }
+
+private val prefixes = arrayOf(
+    "", "http://www.", "https://www.", "http://", "https://",
+    "tel:", "mailto:", "ftp://anonymous:anonymous@", "ftp://ftp.", "ftps://",
+    "sftp://", "smb://", "nfs://", "ftp://", "dav://", "news:",
+    "telnet://", "imap:", "rtsp://", "urn:", "pop:", "sip:", "sips:",
+    "tftp:", "btspp://", "btl2cap://", "btgoep://", "tcpobex://",
+    "irdaobex://", "file://", "urn:epc:id:", "urn:epc:tag:", "urn:epc:pat:",
+    "urn:epc:raw:", "urn:epc:", "urn:nfc:"
+)
