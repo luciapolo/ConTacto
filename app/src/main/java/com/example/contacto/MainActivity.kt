@@ -15,6 +15,9 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import com.example.contacto.nfc.NfcRewriteActivity
+import com.example.contacto.web.SescamGuideActivity // <- agente en WebView (opcional)
+import com.example.contacto.nfc.NfcReadNowActivity
 import com.example.contacto.data.SettingsActivity
 import com.example.contacto.nfc.NfcReadNowActivity
 import com.example.contacto.nfc.NfcReaderActivity
@@ -64,19 +67,13 @@ class MainActivity : ComponentActivity() {
                     onRewriteNfcClick = {
                         startActivity(Intent(this, NfcRewriteActivity::class.java))
                     },
-                    // Lector NFC “clásico” con overlay + navegador (lo mantengo por si lo quieres usar)
-                    onOpenNfcReader = {
-                        startActivity(Intent(this, NfcReaderActivity::class.java))
-                    },
-                    onReadNowClick = {
-                        startActivity(Intent(this, NfcReadNowActivity::class.java))
-                    },
-                    onOpenSettingsClick = {
-                        startActivity(Intent(this, SettingsActivity::class.java))
-                    }
+
+                    onReadNowClick = {startActivity(Intent(this,NfcReadNowActivity::class.java))},
+                    onOpenSettingsClick = {startActivity(Intent(this, SettingsActivity::class.java))}
                 )
             }
         }
+
     }
 
     override fun onResume() {
@@ -92,40 +89,24 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         nfcAdapter?.disableForegroundDispatch(this)
+
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-
-        // Llega un TAG en primer plano: lo intentamos leer
+        // Si más adelante manejas intents (deep links / NFC a Main), hazlo aquí.
+        // Si llega un tag mientras esta pantalla está en primer plano, lo procesamos o lo delegamos:
         val tag: Tag? = if (Build.VERSION.SDK_INT >= 33)
             intent.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag::class.java)
         else
             @Suppress("DEPRECATION") intent.getParcelableExtra(NfcAdapter.EXTRA_TAG)
 
         if (tag != null) {
-            // 1) Intentamos extraer una URL desde NDEF
-            val url = runCatching { readUrlFromTag(tag) }.getOrNull()
-
-            if (!url.isNullOrBlank()) {
-                if (isSescamUrl(url)) {
-                    // 2a) Si es URL del SESCAM -> lanzar la guía directamente en la app
-                    startActivity(
-                        Intent(this, SescamGuideActivity::class.java)
-                            .putExtra("url", url)
-                    )
-                } else {
-                    // 2b) Si no es del SESCAM -> abrir en navegador del sistema
-                    openInBrowser(url)
+            startActivity(
+                Intent(this, com.example.contacto.nfc.NfcReaderActivity::class.java).apply {
+                    putExtra(NfcAdapter.EXTRA_TAG, tag)
                 }
-            } else {
-                // 3) Si no contiene URL legible, delega a tu lector existente (no se pierde funcionalidad)
-                startActivity(
-                    Intent(this, NfcReaderActivity::class.java).apply {
-                        putExtra(NfcAdapter.EXTRA_TAG, tag)
-                    }
-                )
-            }
+            )
         }
     }
 

@@ -27,7 +27,7 @@ import java.util.Calendar
 fun HomeScreen(
     userName: String? = null,
     onRewriteNfcClick: () -> Unit,
-    onOpenNfcReader: () -> Unit,
+    onOpenSescamGuide: () -> Unit,
     onReadNowClick: () -> Unit,
     onOpenSettingsClick: () -> Unit
 ) {
@@ -76,7 +76,6 @@ fun HomeScreen(
                     text = buildString {
                         append(greeting)
                         userName?.takeIf { it.isNotBlank() }?.let { append(", $it") }
-                        append(" 👋")
                     },
                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
                     textAlign = TextAlign.Center
@@ -108,7 +107,15 @@ fun HomeScreen(
                     Text(stringResource(R.string.cta_rewrite_nfc))
                 }
 
-
+                Button(
+                    onClick = onOpenSescamGuide,
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = MaterialTheme.shapes.extraLarge
+                ) {
+                    Icon(Icons.Outlined.Public, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Guía SESCAM (en la app)")
+                }
             }
         }
     }
@@ -120,7 +127,7 @@ private fun HomeScreenPreview() {
     MaterialTheme {
         HomeScreen(
             onRewriteNfcClick = {},
-            onOpenNfcReader = {},
+            onOpenSescamGuide = {},
             onReadNowClick = {},
             onOpenSettingsClick = {}
         )
