@@ -1,3 +1,4 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
 package com.example.contacto.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
@@ -6,12 +7,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Contactless
-import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,7 +26,9 @@ import java.util.Calendar
 @Composable
 fun HomeScreen(
     userName: String? = null,
-    onRewriteNfcClick: () -> Unit
+    onRewriteNfcClick: () -> Unit,
+    onReadNowClick: () -> Unit,
+    onOpenSettingsClick: () -> Unit
 ) {
     val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
     val greeting = when (hour) {
@@ -37,8 +37,18 @@ fun HomeScreen(
         else -> stringResource(R.string.greeting_evening)
     }
 
-
-    Scaffold { inner ->
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text(text = "ConTacto") },
+                actions = {
+                    IconButton(onClick = onOpenSettingsClick) {
+                        Icon(imageVector = Icons.Filled.Settings, contentDescription = "Ajustes")
+                    }
+                }
+            )
+        }
+    ) { inner ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -65,7 +75,6 @@ fun HomeScreen(
                     text = buildString {
                         append(greeting)
                         userName?.takeIf { it.isNotBlank() }?.let { append(", $it") }
-                        append(" 👋")
                     },
                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
                     textAlign = TextAlign.Center
@@ -77,6 +86,18 @@ fun HomeScreen(
                     textAlign = TextAlign.Center
                 )
 
+                // Botón "Leer NFC ahora"
+                Button(
+                    onClick = onReadNowClick,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = MaterialTheme.shapes.extraLarge
+                ) {
+                    Icon(Icons.Outlined.Contactless, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Leer NFC ahora")
+                }
 
                 // Botón principal Reescribir NFC
                 Button(
@@ -99,6 +120,10 @@ fun HomeScreen(
 @Composable
 private fun HomeScreenPreview() {
     MaterialTheme {
-        HomeScreen(onRewriteNfcClick = {})
+        HomeScreen(
+            onRewriteNfcClick = {},
+            onReadNowClick = {},
+            onOpenSettingsClick = {}
+        )
     }
 }
