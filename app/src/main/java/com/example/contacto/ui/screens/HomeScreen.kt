@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Contactless
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material3.Button
@@ -13,6 +14,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,7 +33,9 @@ fun HomeScreen(
     userName: String? = null,
     onRewriteNfcClick: () -> Unit,
     onOpenNfcReader: () -> Unit,      // NUEVO: lector NFC (navegador + overlay)
-    onOpenSescamGuide: () -> Unit     // NUEVO: agente dentro de la app (WebView)
+    onOpenSescamGuide: () -> Unit,     // NUEVO: agente dentro de la app (WebView)
+    onReadNowClick: () -> Unit,
+    onOpenSettingsClick: () -> Unit
 ) {
     val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
     val greeting = when (hour) {
@@ -41,6 +45,18 @@ fun HomeScreen(
     }
 
     Scaffold { inner ->
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text(text = "ConTacto") },
+                actions = {
+                    IconButton(onClick = onOpenSettingsClick) {
+                        Icon(imageVector = Icons.Filled.Settings, contentDescription = "Ajustes")
+                    }
+                }
+            )
+        }
+    ) { inner ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -79,6 +95,20 @@ fun HomeScreen(
                     textAlign = TextAlign.Center
                 )
 
+                // Botón "Leer NFC ahora"
+                Button(
+                    onClick = onReadNowClick,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = MaterialTheme.shapes.extraLarge
+                ) {
+                    Icon(Icons.Outlined.Contactless, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Leer NFC ahora")
+                }
+
+                // Botón principal Reescribir NFC
                 // Botón: Reescribir NFC
                 Button(
                     onClick = onRewriteNfcClick,
@@ -129,7 +159,9 @@ private fun HomeScreenPreview() {
         HomeScreen(
             onRewriteNfcClick = {},
             onOpenNfcReader = {},
-            onOpenSescamGuide = {}
+            onOpenSescamGuide = {},
+            onReadNowClick = {},
+            onOpenSettingsClick = {}
         )
     }
 }

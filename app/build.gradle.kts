@@ -49,6 +49,9 @@ dependencies {
     // Permisos en runtime (opcional)
     implementation("com.google.accompanist:accompanist-permissions:0.36.0")
 
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1") // si no la tienes
+
     implementation("androidx.browser:browser:1.8.0")
 }
 
