@@ -1,4 +1,3 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
 package com.example.contacto.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
@@ -9,6 +8,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Contactless
+import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -27,6 +32,8 @@ import java.util.Calendar
 fun HomeScreen(
     userName: String? = null,
     onRewriteNfcClick: () -> Unit,
+    onOpenNfcReader: () -> Unit,      // NUEVO: lector NFC (navegador + overlay)
+    onOpenSescamGuide: () -> Unit,     // NUEVO: agente dentro de la app (WebView)
     onReadNowClick: () -> Unit,
     onOpenSettingsClick: () -> Unit
 ) {
@@ -37,6 +44,7 @@ fun HomeScreen(
         else -> stringResource(R.string.greeting_evening)
     }
 
+    Scaffold { inner ->
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -75,6 +83,7 @@ fun HomeScreen(
                     text = buildString {
                         append(greeting)
                         userName?.takeIf { it.isNotBlank() }?.let { append(", $it") }
+                        append(" 👋")
                     },
                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
                     textAlign = TextAlign.Center
@@ -100,6 +109,7 @@ fun HomeScreen(
                 }
 
                 // Botón principal Reescribir NFC
+                // Botón: Reescribir NFC
                 Button(
                     onClick = onRewriteNfcClick,
                     modifier = Modifier
@@ -110,6 +120,32 @@ fun HomeScreen(
                     Icon(Icons.Outlined.Contactless, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.cta_rewrite_nfc))
+                }
+
+                // Botón: Leer NFC (abrir SESCAM + guía superpuesta)
+                Button(
+                    onClick = onOpenNfcReader,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = MaterialTheme.shapes.extraLarge
+                ) {
+                    Icon(Icons.Outlined.Contactless, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Leer NFC (Sescam + guía)")
+                }
+
+                // Botón: Guía SESCAM dentro de la app (WebView)
+                Button(
+                    onClick = onOpenSescamGuide,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = MaterialTheme.shapes.extraLarge
+                ) {
+                    Icon(Icons.Outlined.Public, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Guía SESCAM (en la app)")
                 }
             }
         }
@@ -122,6 +158,8 @@ private fun HomeScreenPreview() {
     MaterialTheme {
         HomeScreen(
             onRewriteNfcClick = {},
+            onOpenNfcReader = {},
+            onOpenSescamGuide = {},
             onReadNowClick = {},
             onOpenSettingsClick = {}
         )
