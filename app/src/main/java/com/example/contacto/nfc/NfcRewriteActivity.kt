@@ -14,25 +14,24 @@ import android.provider.ContactsContract
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.activity.compose.rememberLauncherForActivityResult
-import com.example.contacto.ui.theme.ConTactoTheme
-import androidx.annotation.StringRes
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.res.stringResource
 import com.example.contacto.R
-
-// Icons
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import com.example.contacto.ui.theme.ConTactoTheme
 
 class NfcRewriteActivity : ComponentActivity() {
 
@@ -42,38 +41,14 @@ class NfcRewriteActivity : ComponentActivity() {
     private var onWriteResult: ((WriteResult) -> Unit)? = null
 
     private val readerCallback = NfcAdapter.ReaderCallback { tag ->
-        // ========= Diagnóstico =========
-        /*
-        val idHex = tag.id.joinToString("") { "%02X".format(it) }
-        val techsCsv = tag.techList.joinToString()
-        val ndef = Ndef.get(tag)
-        val fmt = NdefFormatable.get(tag)
-        val diagHeader = buildString {
-            append("UID=$idHex  techs=$techsCsv")
-            append(
-                if (ndef != null) " | NDEF OK (max=${ndef.maxSize}B)"
-                else if (fmt != null) " | NdefFormatable OK"
-                else " | No NDEF/Formatable"
-            )
-        }
-        */
-
-        // ========= Flujo mínimo: escribir si hay mensaje pendiente =========
         val msg = pendingMessage
         val result: WriteResult = if (msg != null) {
             writeNdefToTagWithReason(tag, msg)
         } else {
             WriteResult(false, "No hay mensaje preparado.")
         }
-
-        // (Opcional) Si activaste el diagnóstico ampliado, añade el header:
-        // val merged = result.copy(reason = listOf(diagHeader, result.reason).filterNotNull().joinToString(" | "))
-        // onWriteResult?.invoke(merged)
-
-        // Diagnóstico mínimo: solo confirma éxito/fracaso
         onWriteResult?.invoke(result)
     }
-
 
     private var pendingMessage: NdefMessage? = null
 
@@ -86,8 +61,7 @@ class NfcRewriteActivity : ComponentActivity() {
                 NfcRewriteScreen(
                     onBack = { finish() },
                     nfcAvailable = nfcAdapter != null,
-                    // La UI me dice qué mensaje escribir y yo activo el ReaderMode
-                    onStartListening = { message, _ /* ignoramos el boolean callback */ ->
+                    onStartListening = { message, _ ->
                         pendingMessage = message
                         enableReaderMode()
                     },
@@ -95,7 +69,6 @@ class NfcRewriteActivity : ComponentActivity() {
                         disableReaderMode()
                         pendingMessage = null
                     },
-                    // La UI registra aquí su handler para recibir el resultado
                     registerResultHandler = { handler ->
                         onWriteResult = handler
                     }
@@ -131,6 +104,13 @@ class NfcRewriteActivity : ComponentActivity() {
 
 private enum class PayloadType { CALL, URL }
 
+private data class QuickLink(val label: String, val url: String)
+
+// Edita esta lista a tu gusto
+private val defaultQuickLinks = listOf(
+    QuickLink("SESCAM", "https://sescam.jccm.es/misaluddigital/app/inicio")
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NfcRewriteScreen(
@@ -138,7 +118,6 @@ fun NfcRewriteScreen(
     nfcAvailable: Boolean,
     onStartListening: (NdefMessage, (Boolean) -> Unit) -> Unit,
     onStopListening: () -> Unit,
-    // NUEVO: en vez de onWriteResult (callback directo), registramos el handler
     registerResultHandler: ((WriteResult) -> Unit) -> Unit
 ){
     val context = LocalContext.current
@@ -149,6 +128,9 @@ fun NfcRewriteScreen(
     var status by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var lastReason by remember { mutableStateOf<String?>(null) }
+
+    // --- Accesos rápidos (puedes mutarlos en runtime si quieres añadir más) ---
+    var quickLinks by remember { mutableStateOf(defaultQuickLinks) }
 
     // --- Picker de contactos + permiso ---
     var pendingPick by remember { mutableStateOf(false) }
@@ -245,6 +227,29 @@ fun NfcRewriteScreen(
                     onTypeChange = { type = it; error = null; status = null }
                 )
 
+                // Accesos rápidos (solo visibles en modo URL)
+                if (type == PayloadType.URL) {
+                    Text(
+                        "Accesos rápidos",
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(quickLinks) { link ->
+                            AssistChip(
+                                onClick = {
+                                    type = PayloadType.URL
+                                    input = TextFieldValue(link.url)
+                                    error = null
+                                },
+                                label = { Text(link.label) }
+                            )
+                        }
+                    }
+                }
+
                 // Campo según tipo
                 OutlinedTextField(
                     value = input,
@@ -268,9 +273,7 @@ fun NfcRewriteScreen(
 
                 // Botón extra: Elegir de contactos (solo en modo Llamar)
                 if (type == PayloadType.CALL) {
-                    OutlinedButton(onClick = {
-                        if (!waiting) pickFromContacts()
-                    }) {
+                    OutlinedButton(onClick = { if (!waiting) pickFromContacts() }) {
                         Text("Elegir de contactos")
                     }
                 }
@@ -376,7 +379,6 @@ private fun AssistCard(
 
 /** =========== Construcción del NDEF =========== */
 
-/** =========== Construcción del NDEF =========== */
 private fun buildMessage(type: PayloadType, rawInput: String): NdefMessage {
     val record: NdefRecord = when (type) {
         PayloadType.CALL -> {
@@ -388,10 +390,9 @@ private fun buildMessage(type: PayloadType, rawInput: String): NdefMessage {
             NdefRecord.createUri(url)
         }
     }
-    // Un único record para minimizar tamaño (no AAR, ni texto extra)
+    // Un único record para minimizar tamaño
     return NdefMessage(arrayOf(record))
 }
-
 
 /** Validaciones rápidas */
 private fun validateInput(type: PayloadType, input: String): String? {
@@ -437,7 +438,7 @@ private fun writeNdefToTagWithReason(tag: Tag, message: NdefMessage): WriteResul
             val max = ndef.maxSize
             if (size > max) {
                 ndef.close()
-                return WriteResult(false, "Mensaje demasiado grande (${size}B > ${max}B). Prueba sin AAR o usa un tag con más memoria.")
+                return WriteResult(false, "Mensaje demasiado grande (${size}B > ${max}B).")
             }
             ndef.writeNdefMessage(message)
             ndef.close()
