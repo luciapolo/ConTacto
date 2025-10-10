@@ -32,8 +32,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import com.example.contacto.web.SescamGuideActivity
 
 class NfcReadNowActivity : ComponentActivity() {
+
+    // Dominios válidos del SESCAM
+    private val SESCAM_HOSTS = setOf("sescam.jccm.es", "www.sescam.jccm.es")
 
     // Guardamos un tel: pendiente mientras pedimos permiso
     private var pendingTelUri: Uri? = null
@@ -67,12 +71,26 @@ class NfcReadNowActivity : ComponentActivity() {
         }
     }
 
-    /** Acción abrir enlace */
+    /** Acción abrir enlace o lanzar guía si es SESCAM */
     private fun onActionLink(uri: Uri) {
         val scheme = uri.scheme?.lowercase()
         if (scheme == "http" || scheme == "https") {
-            val view = Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)
-            startActivity(view)
+            val host = (uri.host ?: "").lowercase()
+
+            val looksLikeSescam = host in SESCAM_HOSTS
+            if (looksLikeSescam) {
+                // Lanza la guía con la URL del tag NFC
+                val i = Intent(this, SescamGuideActivity::class.java).apply {
+                    putExtra(SescamGuideActivity.EXTRA_START_URL, uri.toString())
+                    // opcionalmente puedes añadir flags si vienes de otra task:
+                    // addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                }
+                startActivity(i)
+            } else {
+                // Comportamiento genérico para otros enlaces
+                val view = Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)
+                startActivity(view)
+            }
         }
     }
 }
@@ -127,10 +145,10 @@ private fun ReadNowScreen(
                 scheme == "tel" -> {
                     val u = uri
                     activity.runOnUiThread {
-                        status = "Detectado teléfono: ${u.schemeSpecificPart}"
+                        status = "Detectado teléfono: ${u!!.schemeSpecificPart}"
                         statusType = StatusType.Tel
                     }
-                    onTel(u)
+                    onTel(u!!)
                 }
                 scheme == "http" || scheme == "https" -> {
                     val u = uri
@@ -138,7 +156,7 @@ private fun ReadNowScreen(
                         status = "Abriendo enlace…"
                         statusType = StatusType.Link
                     }
-                    onLink(u)
+                    onLink(u!!)
                 }
                 text?.trim()?.startsWith("tel:", ignoreCase = true) == true -> {
                     val tel = text.trim().toUri()
@@ -269,7 +287,6 @@ private fun ReadNowScreen(
 }
 
 private enum class StatusType { Idle, Tel, Link, Neutral }
-
 
 /* ----------------- Helpers NDEF ----------------- */
 
