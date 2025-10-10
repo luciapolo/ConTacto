@@ -11,14 +11,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import com.example.contacto.nfc.NfcRewriteActivity
-import com.example.contacto.nfc.NfcReaderActivity          // <- lector con overlay + navegador
 import com.example.contacto.web.SescamGuideActivity // <- agente en WebView (opcional)
 import com.example.contacto.nfc.NfcReadNowActivity
 import com.example.contacto.data.SettingsActivity
 
 import com.example.contacto.ui.screens.HomeScreen
 import com.example.contacto.ui.theme.ConTactoTheme
-import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private var nfcAdapter: NfcAdapter? = null
@@ -59,10 +57,6 @@ class MainActivity : ComponentActivity() {
                     userName = null,
                     onRewriteNfcClick = {
                         startActivity(Intent(this, NfcRewriteActivity::class.java))
-                    },
-                    // NUEVO: abre el lector NFC (al leer una URL del SESCAM, mostrará overlay + navegador)
-                    onOpenNfcReader = {
-                        startActivity(Intent(this, NfcReaderActivity::class.java))
                     },
                     // NUEVO (opcional): abre el agente integrado en WebView
                     onOpenSescamGuide = {

@@ -102,7 +102,7 @@ class NfcRewriteActivity : ComponentActivity() {
 
 /** =========== UI =========== */
 
-private enum class PayloadType { CALL, URL }
+private enum class PayloadType { CALL, URL, APP }
 
 private data class QuickLink(val label: String, val url: String)
 
@@ -187,7 +187,17 @@ fun NfcRewriteScreen(
 
     // Construye el mensaje según el tipo elegido
     val messageToWrite by remember(type, input) {
-        mutableStateOf(buildMessage(type, input.text))
+        mutableStateOf(
+            when (type) {
+                PayloadType.APP -> {
+                    // Solo AAR con el package de la app para abrirla directamente
+                    NdefMessage(arrayOf(
+                        NdefRecord.createApplicationRecord(context.packageName)
+                    ))
+                }
+                else -> buildMessage(type, input.text)
+            }
+        )
     }
 
     // Tamaño estimado (ayuda para ver si cabe en el tag)
@@ -250,21 +260,36 @@ fun NfcRewriteScreen(
                     }
                 }
 
-                // Campo según tipo
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { input = it; error = null },
-                    label = {
-                        Text(
-                            when (type) {
-                                PayloadType.CALL -> "Número a llamar (p.ej. +34911222333)"
-                                PayloadType.URL -> "URL (p.ej. https://miweb.com)"
-                            }
-                        )
-                    },
-                    isError = error != null,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // Campo según tipo (no mostramos input en APP)
+                if (type == PayloadType.CALL || type == PayloadType.URL) {
+                    OutlinedTextField(
+                        value = input,
+                        onValueChange = { input = it; error = null },
+                        label = {
+                            Text(
+                                when (type) {
+                                    PayloadType.CALL -> "Número a llamar (p.ej. +34911222333)"
+                                    PayloadType.URL  -> "URL (p.ej. https://miweb.com)"
+                                    else -> ""
+                                }
+                            )
+                        },
+                        isError = error != null,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    // Modo APP: explicación corta
+                    ElevatedCard {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("Abrir la aplicación", style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "Graba una etiqueta que, al leerla, abre directamente esta app.\n" +
+                                        "Paquete: ${context.packageName}"
+                            )
+                        }
+                    }
+                }
 
                 Text(
                     "Tamaño del mensaje: $estimatedBytes B (límite aprox. 106 B)",
@@ -289,7 +314,10 @@ fun NfcRewriteScreen(
                     Button(
                         enabled = nfcAvailable && !waiting,
                         onClick = {
-                            val validation = validateInput(type, input.text)
+                            val validation = when (type) {
+                                PayloadType.CALL, PayloadType.URL -> validateInput(type, input.text)
+                                PayloadType.APP -> null // sin validación
+                            }
                             if (validation != null) { error = validation; return@Button }
 
                             status = "Acerca una etiqueta para escribir…"
@@ -337,14 +365,20 @@ private fun SegmentedButtons(type: PayloadType, onTypeChange: (PayloadType) -> U
         SegmentedButton(
             selected = type == PayloadType.CALL,
             onClick = { onTypeChange(PayloadType.CALL) },
-            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
         ) { Text("Llamar") }
 
         SegmentedButton(
             selected = type == PayloadType.URL,
             onClick = { onTypeChange(PayloadType.URL) },
-            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
         ) { Text("URL") }
+
+        SegmentedButton(
+            selected = type == PayloadType.APP,
+            onClick = { onTypeChange(PayloadType.APP) },
+            shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
+        ) { Text("Abrir app") }
     }
 }
 
@@ -389,6 +423,7 @@ private fun buildMessage(type: PayloadType, rawInput: String): NdefMessage {
             val url = ensureUrlScheme(rawInput)
             NdefRecord.createUri(url)
         }
+        PayloadType.APP -> error("APP se construye en el Composable con createApplicationRecord()")
     }
     // Un único record para minimizar tamaño
     return NdefMessage(arrayOf(record))
@@ -407,6 +442,7 @@ private fun validateInput(type: PayloadType, input: String): String? {
                 "Introduce una URL válida (ej.: https://miweb.com)"
             else null
         }
+        PayloadType.APP -> null
     }
 }
 
