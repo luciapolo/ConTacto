@@ -8,12 +8,14 @@ import android.nfc.Tag
 import android.nfc.tech.Ndef
 import android.os.Build
 import android.os.Bundle
-import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import com.example.contacto.nfc.NfcRewriteActivity
-import com.example.contacto.nfc.NfcReader          // <- lector con overlay + navegador
+import com.example.contacto.nfc.NfcReaderActivity          // <- lector con overlay + navegador
 import com.example.contacto.web.SescamGuideActivity // <- agente en WebView (opcional)
+import com.example.contacto.nfc.NfcReadNowActivity
+import com.example.contacto.data.SettingsActivity
+
 import com.example.contacto.ui.screens.HomeScreen
 import com.example.contacto.ui.theme.ConTactoTheme
 import java.util.Locale
@@ -60,33 +62,19 @@ class MainActivity : ComponentActivity() {
                     },
                     // NUEVO: abre el lector NFC (al leer una URL del SESCAM, mostrará overlay + navegador)
                     onOpenNfcReader = {
-                        startActivity(Intent(this, NfcReader::class.java))
+                        startActivity(Intent(this, NfcReaderActivity::class.java))
                     },
                     // NUEVO (opcional): abre el agente integrado en WebView
                     onOpenSescamGuide = {
-                        // Si quieres pasar una URL concreta de cita, cámbiala aquí.
                         startActivity(
                             Intent(this, SescamGuideActivity::class.java)
-                                .putExtra("url", "https://sescam.jccm.es")
+                                .putExtra("url", "https://sescam.jccm.es/misaluddigital/app/inicio") // pon aquí la URL que prefieras
                         )
-                    }
-                        startActivity(Intent(this, com.example.contacto.nfc.NfcRewriteActivity::class.java))
                     },
-                    onReadNowClick = {startActivity(Intent(this, com.example.contacto.nfc.NfcReadNowActivity::class.java))},
-                    onOpenSettingsClick = {startActivity(Intent(this, com.example.contacto.data.SettingsActivity::class.java))}
+                    onReadNowClick = {startActivity(Intent(this,NfcReadNowActivity::class.java))},
+                    onOpenSettingsClick = {startActivity(Intent(this, SettingsActivity::class.java))}
                 )
             }
-            HomeScreen(
-                userName = null,
-                onRewriteNfcClick = { startActivity(Intent(this, NfcRewriteActivity::class.java)) },
-                onOpenNfcReader = { startActivity(Intent(this, com.example.contacto.nfc.NfcReader::class.java)) }, // si quieres mantener lector NFC
-                onOpenSescamGuide = {
-                    startActivity(
-                        Intent(this, SescamGuideActivity::class.java)
-                            .putExtra("url", "https://sescam.jccm.es/misaluddigital/app/inicio") // pon aquí la URL que prefieras
-                    )
-                }
-            )
         }
 
     }
@@ -123,11 +111,6 @@ class MainActivity : ComponentActivity() {
                 }
             )
         }
-        override fun onDestroy() {
-            if (this::tts.isInitialized) {
-                tts.stop()
-                tts.shutdown()
-            }
-            super.onDestroy()
-        }
+    }
+
 }

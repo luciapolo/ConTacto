@@ -9,11 +9,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Contactless
 import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -28,12 +23,13 @@ import androidx.compose.ui.unit.dp
 import com.example.contacto.R
 import java.util.Calendar
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     userName: String? = null,
     onRewriteNfcClick: () -> Unit,
-    onOpenNfcReader: () -> Unit,      // NUEVO: lector NFC (navegador + overlay)
-    onOpenSescamGuide: () -> Unit,     // NUEVO: agente dentro de la app (WebView)
+    onOpenNfcReader: () -> Unit,
+    onOpenSescamGuide: () -> Unit,
     onReadNowClick: () -> Unit,
     onOpenSettingsClick: () -> Unit
 ) {
@@ -44,11 +40,10 @@ fun HomeScreen(
         else -> stringResource(R.string.greeting_evening)
     }
 
-    Scaffold { inner ->
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(text = "ConTacto") },
+                title = { Text("ConTacto") },
                 actions = {
                     IconButton(onClick = onOpenSettingsClick) {
                         Icon(imageVector = Icons.Filled.Settings, contentDescription = "Ajustes")
@@ -56,11 +51,11 @@ fun HomeScreen(
                 }
             )
         }
-    ) { inner ->
+    ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(inner),
+                .padding(innerPadding),
             contentAlignment = Alignment.Center
         ) {
             Column(
@@ -95,12 +90,9 @@ fun HomeScreen(
                     textAlign = TextAlign.Center
                 )
 
-                // Botón "Leer NFC ahora"
                 Button(
                     onClick = onReadNowClick,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
                     shape = MaterialTheme.shapes.extraLarge
                 ) {
                     Icon(Icons.Outlined.Contactless, contentDescription = null)
@@ -108,13 +100,9 @@ fun HomeScreen(
                     Text("Leer NFC ahora")
                 }
 
-                // Botón principal Reescribir NFC
-                // Botón: Reescribir NFC
                 Button(
                     onClick = onRewriteNfcClick,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
                     shape = MaterialTheme.shapes.extraLarge
                 ) {
                     Icon(Icons.Outlined.Contactless, contentDescription = null)
@@ -122,12 +110,9 @@ fun HomeScreen(
                     Text(stringResource(R.string.cta_rewrite_nfc))
                 }
 
-                // Botón: Leer NFC (abrir SESCAM + guía superpuesta)
                 Button(
                     onClick = onOpenNfcReader,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
                     shape = MaterialTheme.shapes.extraLarge
                 ) {
                     Icon(Icons.Outlined.Contactless, contentDescription = null)
@@ -135,12 +120,9 @@ fun HomeScreen(
                     Text("Leer NFC (Sescam + guía)")
                 }
 
-                // Botón: Guía SESCAM dentro de la app (WebView)
                 Button(
                     onClick = onOpenSescamGuide,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
                     shape = MaterialTheme.shapes.extraLarge
                 ) {
                     Icon(Icons.Outlined.Public, contentDescription = null)
