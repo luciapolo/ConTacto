@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Contactless
-import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -29,7 +28,6 @@ fun HomeScreen(
     userName: String? = null,
     onRewriteNfcClick: () -> Unit,
     onOpenNfcReader: () -> Unit,
-    onOpenSescamGuide: () -> Unit,
     onReadNowClick: () -> Unit,
     onOpenSettingsClick: () -> Unit
 ) {
@@ -110,25 +108,7 @@ fun HomeScreen(
                     Text(stringResource(R.string.cta_rewrite_nfc))
                 }
 
-                Button(
-                    onClick = onOpenNfcReader,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    shape = MaterialTheme.shapes.extraLarge
-                ) {
-                    Icon(Icons.Outlined.Contactless, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Leer NFC (Sescam + guía)")
-                }
 
-                Button(
-                    onClick = onOpenSescamGuide,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    shape = MaterialTheme.shapes.extraLarge
-                ) {
-                    Icon(Icons.Outlined.Public, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Guía SESCAM (en la app)")
-                }
             }
         }
     }
@@ -141,7 +121,6 @@ private fun HomeScreenPreview() {
         HomeScreen(
             onRewriteNfcClick = {},
             onOpenNfcReader = {},
-            onOpenSescamGuide = {},
             onReadNowClick = {},
             onOpenSettingsClick = {}
         )

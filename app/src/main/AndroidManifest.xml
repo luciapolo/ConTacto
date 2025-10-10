@@ -82,11 +82,46 @@
             android:exported="true"
             android:label="Reescribir NFC"
             android:launchMode="singleTop" />
+        <activity
+            android:name=".nfc.NfcRouterActivity"
+            android:exported="true"
+            android:taskAffinity=""
+            android:launchMode="singleTask"
+            android:label="NFC Router">
 
+            <!-- Cuando el NFC lleva una URI del SESCAM -->
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <!-- http -->
+                <data android:scheme="http" android:host="sescam.jccm.es" android:pathPrefix="/misaluddigital" />
+                <data android:scheme="http" android:host="sescam.castillalamancha.es" android:pathPrefix="/misaluddigital" />
+                <!-- https -->
+                <data android:scheme="https" android:host="sescam.jccm.es" android:pathPrefix="/misaluddigital" />
+                <data android:scheme="https" android:host="sescam.castillalamancha.es" android:pathPrefix="/misaluddigital" />
+            </intent-filter>
+
+            <!-- (Opcional) Deep link de URLs del SESCAM -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <!-- http -->
+                <data android:scheme="http" android:host="sescam.jccm.es" android:pathPrefix="/misaluddigital" />
+                <data android:scheme="http" android:host="sescam.castillalamancha.es" android:pathPrefix="/misaluddigital" />
+                <!-- https -->
+                <data android:scheme="https" android:host="sescam.jccm.es" android:pathPrefix="/misaluddigital" />
+                <data android:scheme="https" android:host="sescam.castillalamancha.es" android:pathPrefix="/misaluddigital" />
+            </intent-filter>
+        </activity>
+
+        <!-- Guía del SESCAM -->
         <activity
             android:name=".web.SescamGuideActivity"
-            android:exported="true"
-            android:label="Guía Cita SESCAM" />
+            android:exported="false"
+            android:label="Guía SESCAM" />
 
 
         <!-- Como el namespace es com.example.contacto, con .MainActivity basta -->
