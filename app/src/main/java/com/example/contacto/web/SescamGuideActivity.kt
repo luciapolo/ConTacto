@@ -349,15 +349,157 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private fun injectAgent() {
         jsReady = false
         val js = """
-            (function(){
-              if (window.__agent) { AndroidGuide.debug("agent already present"); AndroidGuide.agentReady(); return; }
-              // … (tu mismo bloque JS de overlay sin cambios)
-            })();
-        """.trimIndent()
+      (function () {
+        if (window.__agent) { AndroidGuide.debug("agent already present"); AndroidGuide.agentReady(); return; }
+
+        // ---------- Utils ----------
+        const norm = s => (s||"").toString().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim().toLowerCase();
+
+        const highlight = (el) => {
+          if (!el) return;
+          el.scrollIntoView({behavior:"smooth", block:"center"});
+          // resalte visible tanto en hosts Ionic como en HTML normal
+          el.style.outline = "4px solid #FF9800";
+          el.style.outlineOffset = "2px";
+          el.style.borderRadius = "10px";
+          // parpadeo suave para llamar la atención
+          el.animate([{outlineColor:"#FF9800"},{outlineColor:"#FFC107"},{outlineColor:"#FF9800"}], {duration:800, iterations:2});
+        };
+
+        const clickSafely = (el) => {
+          if (!el) return false;
+          try {
+            el.dispatchEvent(new MouseEvent("mousedown",{bubbles:true}));
+            el.click?.();
+            el.dispatchEvent(new MouseEvent("mouseup",{bubbles:true}));
+            return true;
+          } catch(e){ return false; }
+        };
+
+        // Shadow helper: dentro de componentes Ionic a veces el input real está en shadowRoot
+        const getInnerInput = (host) => {
+          if (!host) return null;
+          // 1) hijo <input> en light DOM (muchas builds lo exponen)
+          let inp = host.querySelector("input");
+          if (inp) return inp;
+          // 2) dentro del shadow
+          const sr = host.shadowRoot;
+          if (sr) {
+            inp = sr.querySelector("input, textarea");
+            if (inp) return inp;
+          }
+          // 3) algún input cercano
+          const near = host.closest("ion-item, .item");
+          return near ? (near.querySelector("input") || near.shadowRoot?.querySelector("input")) : null;
+        };
+
+        // ---------- Selectores concretos SESCAM ----------
+        // Inicio -> tarjeta "Cita Atención Primaria"
+        const findPrimary = () => {
+          // por texto del título de la tarjeta
+          const titles = Array.from(document.querySelectorAll("ion-card-title, .card-module ion-card-title, h2, a, button, ion-button"));
+          const t = titles.find(el => norm(el.textContent).includes("cita atencion primaria"));
+          if (t) return t.closest("ion-card") || t;
+          // alternativa: cualquier cosa que lleve a /citacion-primaria
+          const link = Array.from(document.querySelectorAll("a, ion-button,[role='link']")).find(a=>{
+            const h = (a.href || a.getAttribute("href") || "").toString();
+            return h.includes("/citacion-primaria");
+          });
+          return link;
+        };
+
+        // Pantalla CIP
+        const findCipHost = () => document.querySelector("#input-cip") || document.querySelector("ion-input[id*='cip' i]");
+        const findCipInput = () => getInnerInput(findCipHost());
+
+        // Botones finales
+        const findFinalBtn = (mode /* "PEDIR" | "VER" */) => {
+          if (mode === "VER") {
+            return document.getElementById("btn-ver-citas")
+                || Array.from(document.querySelectorAll("ion-button,button,a")).find(el => norm(el.textContent).includes("ver citas") || norm(el.textContent).includes("consultar citas"));
+          } else {
+            return document.getElementById("btn-pedir-cita")
+                || Array.from(document.querySelectorAll("ion-button,button,a")).find(el => norm(el.textContent).includes("pedir cita") || norm(el.textContent).includes("solicitar cita"));
+          }
+        };
+
+        // Farmacia / WiFi (inicio)
+        const findFarmacia = () =>
+          Array.from(document.querySelectorAll("ion-card-title, a, button, ion-button")).find(el => norm(el.textContent).includes("encuentra tu farmacia") || norm(el.textContent).includes("farmacia"));
+        const findWifi = () =>
+          Array.from(document.querySelectorAll("ion-card-title, a, button, ion-button")).find(el => norm(el.textContent).includes("wiseSCAM") || norm(el.textContent).includes("wifi") || norm(el.textContent).includes("wi-fi"));
+
+        // ---------- API pública para Android ----------
+        window.__agent = {
+          banner: (t) => {
+            let b = document.getElementById("__guide_banner");
+            if (!b) {
+              b = document.createElement("div");
+              b.id="__guide_banner";
+              Object.assign(b.style,{
+                position:"fixed",left:"16px",right:"16px",bottom:"16px",zIndex:2147483647,
+                background:"rgba(33,33,33,.92)",color:"#fff",padding:"12px 16px",borderRadius:"12px",
+                fontSize:"16px",boxShadow:"0 8px 24px rgba(0,0,0,.35)",pointerEvents:"none"
+              });
+              document.body.appendChild(b);
+            }
+            b.textContent = t;
+          },
+
+          // Inicio
+          showPrimary: () => { const el = findPrimary(); if (el){ highlight(el); AndroidGuide.debug("showPrimary OK"); } else AndroidGuide.debug("showPrimary NOT FOUND"); },
+          clickPrimary: () => {
+            const el = findPrimary();
+            if (clickSafely(el)) { AndroidGuide.debug("clickPrimary OK"); AndroidGuide.onPrimaryDetected(); }
+            else AndroidGuide.debug("clickPrimary NOT FOUND");
+          },
+
+          showFarmacia: () => { const el = findFarmacia(); if (el){ highlight(el); AndroidGuide.debug("showFarmacia OK"); } else AndroidGuide.debug("showFarmacia NOT FOUND"); },
+          clickFarmacia: () => { const el = findFarmacia(); if (clickSafely(el)) AndroidGuide.debug("clickFarmacia OK"); else AndroidGuide.debug("clickFarmacia NOT FOUND"); },
+
+          showWifi: () => { const el = findWifi(); if (el){ highlight(el); AndroidGuide.debug("showWifi OK"); } else AndroidGuide.debug("showWifi NOT FOUND"); },
+          clickWifi: () => { const el = findWifi(); if (clickSafely(el)) AndroidGuide.debug("clickWifi OK"); else AndroidGuide.debug("clickWifi NOT FOUND"); },
+
+          // CIP
+          showCip: () => {
+            const host = findCipHost(); const inp = findCipInput();
+            const target = inp || host;
+            if (target){ highlight(target); AndroidGuide.debug("showCip OK"); }
+            else AndroidGuide.debug("showCip NOT FOUND");
+          },
+          fillCip: (val) => {
+            const host = findCipHost(); const inp = findCipInput();
+            const target = inp || host;
+            if (!target){ AndroidGuide.debug("fillCip NOT FOUND"); return; }
+            target.focus();
+            target.value = val;
+            target.dispatchEvent(new Event("input", {bubbles:true}));
+            target.dispatchEvent(new Event("change", {bubbles:true}));
+            // eventos propios de Ionic
+            target.dispatchEvent(new CustomEvent("ionInput", {bubbles:true}));
+            target.dispatchEvent(new CustomEvent("ionChange", {bubbles:true}));
+            highlight(target);
+            AndroidGuide.debug("fillCip OK");
+          },
+
+          // Botón final (Pedir / Ver)
+          showFinal: (mode) => { const el = findFinalBtn(mode); if (el){ highlight(el); AndroidGuide.debug("showFinal "+mode+" OK"); } else AndroidGuide.debug("showFinal "+mode+" NOT FOUND"); },
+          clickFinal: (mode) => { const el = findFinalBtn(mode); if (clickSafely(el)) AndroidGuide.debug("clickFinal "+mode+" OK"); else AndroidGuide.debug("clickFinal "+mode+" NOT FOUND"); }
+        };
+
+        // Reaccionar a cambios en apps SPA (Angular/Ionic)
+        const mo = new MutationObserver(() => {/* Android decide cuándo llamar showX/clickX */});
+        mo.observe(document.documentElement || document.body, {childList:true, subtree:true});
+
+        AndroidGuide.agentReady();
+      })();
+    """.trimIndent()
 
         if (Build.VERSION.SDK_INT >= 19) webView.evaluateJavascript(js, null)
         else webView.loadUrl("javascript:$js")
     }
+
+
 
     // ==================== Pasos ====================
 
