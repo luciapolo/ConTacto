@@ -22,8 +22,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import org.json.JSONObject
+import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.UUID
+import java.util.Calendar
 
 class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
@@ -41,7 +43,7 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     // ===== Estado conversacional
-    private enum class Step { ASK_INTENT, PRIMARY, CIP, FINAL }
+    private enum class Step { ASK_INTENT, PRIMARY, CIP, FINAL, FAR_PROV, FAR_LOC, FAR_DATE }
     private enum class FinalAction { PEDIR, VER }
     private var step: Step = Step.ASK_INTENT
     private var chosenFinal: FinalAction? = null
@@ -52,12 +54,11 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     // callback para ejecutar justo al terminar de hablar (p. ej. resaltar CIP)
     private var onTtsDone: (() -> Unit)? = null
 
-    // Contexto detectado por la página (para saber si el usuario ha vuelto atrás manualmente)
-    private var lastContext: String? = null  // "HOME" | "PRIMARY" | "CIP" | "FINAL"
+    // Contexto detectado por la página
+    private var lastContext: String? = null  // "HOME" | "PRIMARY" | "CIP" | "FINAL" | "FARMACIA"
 
     // Intención rápida pendiente tras decir "farmacia" o "wifi"
-    // Valores posibles: "FARMACIA" | "WIFI" | null
-    private var pendingQuickClick: String? = null
+    private var pendingQuickClick: String? = null  // "FARMACIA" | "WIFI" | null
 
     // ===== Permisos
     private val reqAudio = registerForActivityResult(
@@ -97,7 +98,7 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             setImageResource(android.R.drawable.ic_btn_speak_now)
             contentDescription = "Micrófono"
             setBackgroundResource(android.R.drawable.btn_default_small)
-            setOnClickListener { reListenCurrent() } // Micrófono manual
+            setOnClickListener { reListenCurrent() }
         }
         root.addView(FrameLayout(this).apply {
             addView(
@@ -143,7 +144,6 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             tts.language = Locale("es", "ES")
-            // Sin voz durante la carga inicial; solo mostramos al entrar en HOME
             askIntentSpeakOnly()
             if (jsReady) askIntent() else pendingAskIntent = true
         }
@@ -183,7 +183,7 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun askIntentSpeakOnly() {
         step = Step.ASK_INTENT
-        // Sin voz aquí para no hablar mientras la app abre.
+        // sin voz aquí
     }
 
     /** Banner visual (HTML simple) */
@@ -230,11 +230,13 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 listenCip()
             }
             Step.FINAL -> listenFinal()
+            Step.FAR_PROV -> listenFarProvincia()
+            Step.FAR_LOC -> listenFarLocalidad()
+            Step.FAR_DATE -> listenFarFecha()
         }
     }
 
     private fun goBackOneStep() {
-        // limpiar intención rápida si el usuario va atrás
         pendingQuickClick = null
         if (webView.canGoBack()) {
             webView.goBack()
@@ -319,6 +321,14 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 chosenFinal = null
                 speakThen("<b>¿Qué quieres hacer?</b> Di: <b>pedir</b> cita o <b>ver</b> citas.")
             }
+            "FARMACIA" -> {
+                // Entramos en la pantalla de formulario de farmacia
+                step = Step.FAR_PROV
+                pendingQuickClick = null
+                speakThen("<b>Farmacia</b>. Dime la <b>provincia</b>.", afterSpeak = {
+                    evalJs("""__agent && __agent.focusProvincia();""", true)
+                })
+            }
         }
         dbg("Context $prev -> $ctx")
     }
@@ -346,7 +356,7 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
         const pickClickable = (el) => {
           if (!el) return null;
-          return el.closest("ion-button,button,a,[role='button'],ion-card,ion-item,ion-card-content") || el;
+          return el.closest("ion-button,button,a,[role='button'],ion-card,ion-item,ion-card-content,select,input") || el;
         };
 
         const highlight = (el) => {
@@ -375,15 +385,15 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
         const getInnerInput = (host) => {
           if (!host) return null;
-          let inp = host.querySelector("input");
+          let inp = host.querySelector("input, select, textarea");
           if (inp) return inp;
           const sr = host.shadowRoot;
           if (sr) {
-            inp = sr.querySelector("input, textarea");
+            inp = sr.querySelector("input, select, textarea");
             if (inp) return inp;
           }
           const near = host.closest("ion-item, .item");
-          return near ? (near.querySelector("input") || near.shadowRoot?.querySelector("input")) : null;
+          return near ? (near.querySelector("input,select") || near.shadowRoot?.querySelector("input,select")) : null;
         };
 
         const textMatch = (el, ...phrases) => {
@@ -428,6 +438,45 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
           }
         };
 
+        // ---------- Farmacia: provincia / localidad / fecha ----------
+        const findProvincia = () =>
+          document.querySelector("select#provincia, ion-select#provincia, [name='provincia'], ion-select[name='provincia']");
+        const findLocalidad = () =>
+          document.querySelector("select#localidad, ion-select#localidad, [name='localidad'], ion-select[name='localidad']");
+        const findFecha = () =>
+          document.querySelector("input[type='date']#fecha, input[type='date'][name='fecha'], ion-datetime#fecha, ion-datetime[name='fecha']");
+
+        const setSelectByLabel = (sel, valueNorm) => {
+          if (!sel) return;
+          const isIon = sel.tagName?.toLowerCase().includes("ion-");
+          if (!isIon && sel.tagName?.toLowerCase() === "select") {
+            const opts = Array.from(sel.options || []);
+            const hit = opts.find(o => (o.textContent||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"") === valueNorm);
+            if (hit) { sel.value = hit.value; sel.dispatchEvent(new Event("change", {bubbles:true})); }
+          } else {
+            // ion-select: intentar establecer value por label
+            const shadow = sel.shadowRoot || sel;
+            const opts = Array.from(document.querySelectorAll("ion-select-option"));
+            const hit = opts.find(o => (o.textContent||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"") === valueNorm);
+            if (hit) {
+              sel.value = hit.value ?? hit.getAttribute("value") ?? hit.textContent?.trim();
+              sel.dispatchEvent(new CustomEvent("ionChange",{bubbles:true,detail:{value: sel.value}}));
+            }
+          }
+        };
+
+        const setDate = (el, yyyyMmDd) => {
+          if (!el) return;
+          if (el.tagName?.toLowerCase() === "ion-datetime") {
+            el.value = yyyyMmDd;
+            el.dispatchEvent(new CustomEvent("ionChange",{bubbles:true, detail:{value:yyyyMmDd}}));
+          } else {
+            el.value = yyyyMmDd;
+            el.dispatchEvent(new Event("input",{bubbles:true}));
+            el.dispatchEvent(new Event("change",{bubbles:true}));
+          }
+        };
+
         const ensureBanner = () => {
           let b = document.getElementById("__guide_banner");
           if (!b) {
@@ -445,6 +494,12 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         };
 
         const computeContext = () => {
+          // detectar formulario de farmacia por campos típicos
+          const prov = findProvincia();
+          const loc = findLocalidad();
+          const fec = findFecha();
+          if (prov || loc || fec) return "FARMACIA";
+
           const cip = findCipInput() || findCipHost();
           if (cip) return "CIP";
           const ver = findFinalBtn("VER");
@@ -502,6 +557,26 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
           showFinal: (mode) => { const el = findFinalBtn(mode); if (el){ highlight(el); } },
           clickFinal: (mode) => { const el = findFinalBtn(mode); if (clickSafely(el)) {} },
 
+          // ---- Farmacia helpers ----
+          focusProvincia: () => { const el = findProvincia(); if (el){ highlight(el); el.focus?.(); } },
+          focusLocalidad: () => { const el = findLocalidad(); if (el){ highlight(el); el.focus?.(); } },
+          focusFecha: () => { const el = findFecha(); if (el){ highlight(el); el.focus?.(); } },
+
+          setProvincia: (valueNorm) => {
+            const el = findProvincia(); if (!el) return;
+            setSelectByLabel(el, valueNorm);
+            highlight(el);
+          },
+          setLocalidad: (valueNorm) => {
+            const el = findLocalidad(); if (!el) return;
+            setSelectByLabel(el, valueNorm);
+            highlight(el);
+          },
+          setFecha: (yyyyMmDd) => {
+            const el = findFecha(); if (!el) return;
+            setDate(el, yyyyMmDd); highlight(el);
+          },
+
           _rebind: () => { emitContextIfChanged(); }
         };
 
@@ -531,7 +606,6 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun listenIntent() {
         listenOnce { said ->
-            // Si hay intención rápida pendiente y el usuario dice "pulsa", ejecutar y limpiar
             if (pendingQuickClick != null && "pulsa" in said) {
                 when (pendingQuickClick) {
                     "FARMACIA" -> evalJs("""__agent && __agent.clickFarmacia();""", true)
@@ -554,7 +628,6 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     pendingQuickClick = "FARMACIA"
                     speakThen("<b>Farmacia</b>. Pulsa el botón o di: pulsa por mí.")
                     evalJs("""__agent && __agent.showFarmacia();""", true)
-                    // Micrófono NO automático: el usuario vuelve a pulsar si quiere decir "pulsa por mí"
                 }
                 "wifi" in said -> {
                     pendingQuickClick = "WIFI"
@@ -583,6 +656,8 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    // -------- CIP (con decodificador de letras) --------
+
     private fun askCip() {
         step = Step.CIP
         speakThen(
@@ -597,7 +672,8 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 goBackOneStep()
                 return@listenOnce
             }
-            val cip = said.uppercase(Locale.ROOT).replace("[^A-Z0-9]".toRegex(), "")
+            val decoded = decodeSpelledEs(said) // <-- convierte “vejek” en “BGK”, etc.
+            val cip = decoded.uppercase(Locale.ROOT).replace("[^A-Z0-9]".toRegex(), "")
             if (cip.length < 4) {
                 evalJs("""__agent && __agent.showCip();""", true)
                 speakThen("<b>No lo he entendido.</b> Escríbelo o repítelo despacio.")
@@ -638,4 +714,196 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }
         }
     }
+
+    // -------- Farmacia: provincia → localidad → fecha --------
+
+    private fun listenFarProvincia() {
+        listenOnce { said ->
+            if ("atrás" in said) { goBackOneStep(); return@listenOnce }
+            val prov = normalizeForSelect(said)
+            evalJs("""__agent && __agent.setProvincia(${JSONObject.quote(prov)});""", true)
+            step = Step.FAR_LOC
+            speakThen("Ahora dime la <b>localidad</b>.", afterSpeak = {
+                evalJs("""__agent && __agent.focusLocalidad();""", true)
+            })
+        }
+    }
+
+    private fun listenFarLocalidad() {
+        listenOnce { said ->
+            if ("atrás" in said) { step = Step.FAR_PROV; speakThen("Dime la <b>provincia</b>."); return@listenOnce }
+            val loc = normalizeForSelect(said)
+            evalJs("""__agent && __agent.setLocalidad(${JSONObject.quote(loc)});""", true)
+            step = Step.FAR_DATE
+            speakThen("¿Para qué <b>fecha</b>? Puedes decir: hoy, mañana o una fecha.", afterSpeak = {
+                evalJs("""__agent && __agent.focusFecha();""", true)
+            })
+        }
+    }
+
+    private fun listenFarFecha() {
+        listenOnce { said ->
+            if ("atrás" in said) { step = Step.FAR_LOC; speakThen("Dime la <b>localidad</b>."); return@listenOnce }
+            val dateStr = parseSpokenDateIso(said) ?: todayIso()
+            evalJs("""__agent && __agent.setFecha(${JSONObject.quote(dateStr)});""", true)
+            speakThen("<b>Listo</b>. Provincia, localidad y fecha colocadas.")
+            // Aquí te quedas en la pantalla; si hay botón de buscar podrías añadir un “pulsa por mí”.
+        }
+    }
+
+    // ==================== Utilidades ====================
+
+    private fun normalizeForSelect(s: String): String {
+        return s.lowercase(Locale.ROOT)
+            .normalizeToAscii()
+            .trim()
+    }
+
+    private fun String.normalizeToAscii(): String =
+        this.normalizeNFD().replace(Regex("[\\u0300-\\u036f]"), "")
+
+    private fun String.normalizeNFD(): String =
+        java.text.Normalizer.normalize(this, java.text.Normalizer.Form.NFD)
+
+    private fun todayIso(): String {
+        val cal = Calendar.getInstance()
+        val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT)
+        return fmt.format(cal.time)
+    }
+
+    private fun parseSpokenDateIso(saidRaw: String): String? {
+        val said = saidRaw.lowercase(Locale.ROOT).trim()
+        val cal = Calendar.getInstance()
+        when {
+            "hoy" in said -> { /* cal ahora */ }
+            "mañana" in said || "manana" in said -> cal.add(Calendar.DAY_OF_YEAR, 1)
+            else -> {
+                // intenta dd/mm/aaaa o dd de <mes> de aaaa
+                val meses = listOf(
+                    "enero","febrero","marzo","abril","mayo","junio",
+                    "julio","agosto","septiembre","octubre","noviembre","diciembre"
+                )
+                val ddmmyyyy = Regex("""\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b""").find(said)
+                if (ddmmyyyy != null) {
+                    val d = ddmmyyyy.groupValues[1].toInt()
+                    val m = ddmmyyyy.groupValues[2].toInt() - 1
+                    val y = ddmmyyyy.groupValues[3].toInt()
+                    cal.set(Calendar.YEAR, y); cal.set(Calendar.MONTH, m); cal.set(Calendar.DAY_OF_MONTH, d)
+                } else {
+                    val mLong = meses.indexOfFirst { said.contains(it) }
+                    val dMatch = Regex("""\b(\d{1,2})\b""").find(said)?.groupValues?.get(1)?.toIntOrNull()
+                    val yMatch = Regex("""\b(20\d{2})\b""").find(said)?.groupValues?.get(1)?.toIntOrNull()
+                    if (mLong >= 0 && dMatch != null) {
+                        val y = yMatch ?: cal.get(Calendar.YEAR)
+                        cal.set(Calendar.YEAR, y); cal.set(Calendar.MONTH, mLong); cal.set(Calendar.DAY_OF_MONTH, dMatch)
+                    } else return null
+                }
+            }
+        }
+        val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT)
+        return fmt.format(cal.time)
+    }
+
+    /**
+     * Decodificador de letras/números en español para el CIP.
+     * Convierte secuencias reconocidas como “vejek” en “BGK”.
+     * Reglas:
+     *  - “be” y “ve” → B (para evitar el típico error de “B” como “V” al dictar letra suelta)
+     *  - “uve” / “ve corta” → V
+     *  - “je” / “ge” → G
+     *  - “ka” / “k” → K
+     *  - “equis” → X, “jota” → J, “cu” → Q, etc.
+     *  - números en texto (“cero”, “uno”…) → dígitos.
+     */
+    private fun decodeSpelledEs(inputRaw: String): String {
+        val input = inputRaw.lowercase(Locale.ROOT).normalizeToAscii()
+
+        // tokenización greedy por palabras y también dentro de palabras largas
+        val map = linkedMapOf(
+            // letras con nombres largos primero
+            "doble u" to "W",
+            "w" to "W",
+            "uve" to "V",
+            "ve corta" to "V",
+            "ve" to "B",       // forzamos B para casos como “vejek” (BGK)
+            "be" to "B",
+            "ce" to "C",
+            "de" to "D",
+            "efe" to "F",
+            "ge" to "G",
+            "je" to "G",
+            "hache" to "H",
+            "i griega" to "Y",
+            "ye" to "Y",
+            "i" to "I",
+            "jota" to "J",
+            "ka" to "K",
+            "k" to "K",
+            "ele" to "L",
+            "eme" to "M",
+            "ene" to "N",
+            "enie" to "Ñ",
+            "ene con tilde" to "Ñ",
+            "o" to "O",
+            "pe" to "P",
+            "cu" to "Q",
+            "erre" to "R",
+            "ese" to "S",
+            "te" to "T",
+            "u" to "U",
+            "equis" to "X",
+            "zeta" to "Z",
+            // dígitos
+            "cero" to "0",
+            "uno" to "1",
+            "dos" to "2",
+            "tres" to "3",
+            "cuatro" to "4",
+            "cinco" to "5",
+            "seis" to "6",
+            "siete" to "7",
+            "ocho" to "8",
+            "nueve" to "9"
+        )
+
+        // primero intenta por palabras separadas
+        val words = input.split(Regex("[^a-z0-9]+")).filter { it.isNotBlank() }
+        val byWords = words.map { w ->
+            map[w] ?: w // si no es nombre de letra, deja tal cual (podría ser ya “BGK123”)
+        }.joinToString("")
+
+        // si ya salió algo con letras sueltas, úsalo
+        if (byWords.any { it.isLetter() }) return byWords.uppercase(Locale.ROOT)
+
+        // si vino todo pegado (ej. “vejek”), hacemos greedy dentro de la cadena original
+        var i = 0
+        val out = StringBuilder()
+        val keys = map.keys.sortedByDescending { it.length } // greedy: más largas primero
+        val s = input
+        while (i < s.length) {
+            var matched = false
+            for (k in keys) {
+                if (k.isEmpty()) continue
+                if (k.contains(' ') ) {
+                    // patrones con espacios no aplican al pegado
+                    continue
+                }
+                if (i + k.length <= s.length && s.substring(i, i + k.length) == k) {
+                    out.append(map[k])
+                    i += k.length
+                    matched = true
+                    break
+                }
+            }
+            if (!matched) {
+                // si es dígito o letra A-Z, la dejamos
+                val ch = s[i]
+                if (ch.isDigit() || (ch in 'a'..'z')) out.append(ch)
+                i++
+            }
+        }
+        return out.toString().uppercase(Locale.ROOT)
+    }
+
+    // ==================== FIN utilidades ====================
 }
