@@ -11,7 +11,6 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
-import android.util.Log
 import android.view.Gravity
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
@@ -33,13 +32,8 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         const val EXTRA_START_URL = "extra_start_url"
     }
 
-    // ===== DEBUG =====
-    private val TAG = "SescamGuide"
-    private val TOAST_DEBUG = true
-    private fun dbg(msg: String) {
-        Log.d(TAG, msg)
-        if (TOAST_DEBUG) Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
-    }
+    // ===== DEBUG (desactivado/no-op) =====
+    private fun dbg(@Suppress("UNUSED_PARAMETER") msg: String) { /* no-op */ }
 
     // ===== Motores
     private lateinit var webView: WebView
@@ -90,7 +84,6 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             contentDescription = "Repetir"
             setBackgroundResource(android.R.drawable.btn_default_small)
             setOnClickListener {
-                dbg("UI: repetir banner")
                 lastBanner?.let { banner(it) }
             }
         }
@@ -99,7 +92,6 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             contentDescription = "Escuchar"
             setBackgroundResource(android.R.drawable.btn_default_small)
             setOnClickListener {
-                dbg("UI: reListenCurrent()")
                 reListenCurrent()
             }
         }
@@ -121,56 +113,52 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         // ------- TTS
         tts = TextToSpeech(this, this)
         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(id: String?) { dbg("TTS onStart: $id") }
+            override fun onStart(id: String?) {}
             override fun onDone(id: String?) {
-                dbg("TTS onDone: $id, step=$step")
                 runOnUiThread {
                     mainHandler.postDelayed({
                         when (step) {
                             Step.ASK_INTENT -> listenIntent()
                             Step.PRIMARY -> listenPrimary()
-                            Step.CIP -> listenCip()
+                            Step.CIP -> {
+                                // 👉 Resalta el CIP justo DESPUÉS de hablar la frase
+                                evalJs("""__agent && __agent.showCip();""", true)
+                                listenCip()
+                            }
                             Step.FINAL -> listenFinal()
                         }
                     }, 150)
                 }
             }
-            override fun onError(id: String?) { dbg("TTS onError: $id") }
+            override fun onError(id: String?) {}
         })
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) {
-            dbg("Pidiendo permiso de micrófono")
             reqAudio.launch(Manifest.permission.RECORD_AUDIO)
         }
 
         // ------- WebView
         setupWebView()
 
-        // URL de inicio: viene del NFC (NfcReadNowActivity) o cae en la URL por defecto
+        // URL de inicio
         val startUrl = intent.getStringExtra(EXTRA_START_URL)
             ?: "https://sescam.jccm.es/misaluddigital/app/inicio"
-        dbg("Cargando URL inicial: $startUrl")
         webView.loadUrl(startUrl)
     }
 
     override fun onInit(status: Int) {
-        dbg("onInit(TTS): status=$status")
         if (status == TextToSpeech.SUCCESS) {
             tts.language = Locale("es", "ES")
             // Hablar SIEMPRE al arrancar
             askIntentSpeakOnly()
             // Cuando JS esté listo, pintamos overlays
             if (jsReady) {
-                dbg("JS ya listo en onInit -> askIntent()")
                 askIntent()
             } else {
-                dbg("JS no listo aún; pendiente askIntent()")
                 pendingAskIntent = true
             }
-        } else {
-            dbg("TTS init FAILURE")
         }
     }
 
@@ -181,7 +169,6 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     override fun onDestroy() {
-        dbg("onDestroy()")
         runCatching { stt?.destroy() }
         if (::tts.isInitialized) runCatching { tts.stop(); tts.shutdown() }
         try {
@@ -200,19 +187,16 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         lastBanner = text
         banner(text)
         val uttId = UUID.randomUUID().toString()
-        dbg("speakThen: $text (uttId=$uttId)")
         runCatching { tts.stop() }
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, uttId)
     }
 
     private fun askIntentSpeakOnly() {
-        dbg("askIntentSpeakOnly()")
         step = Step.ASK_INTENT
         speakThen("¿Qué quieres hacer? Di: cita, farmacia o wifi.")
     }
 
     private fun banner(text: String) {
-        dbg("banner(): $text")
         evalJs(
             """if (window.__agent) { __agent.banner(${JSONObject.quote(text)}); }""",
             queueIfNotReady = true
@@ -220,9 +204,7 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun listenOnce(onText: (String) -> Unit) {
-        dbg("listenOnce()")
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            dbg("STT no disponible")
             return
         }
         if (stt == null) stt = SpeechRecognizer.createSpeechRecognizer(this)
@@ -230,18 +212,16 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         runCatching { stt?.cancel() }
 
         stt?.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) { dbg("STT onReadyForSpeech") }
-            override fun onBeginningOfSpeech() { dbg("STT onBeginningOfSpeech") }
+            override fun onReadyForSpeech(params: Bundle?) {}
+            override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() { dbg("STT onEndOfSpeech") }
+            override fun onEndOfSpeech() {}
             override fun onError(error: Int) {
-                dbg("STT onError: $error")
                 mainHandler.postDelayed({ reListenCurrent() }, 400)
             }
             override fun onResults(results: Bundle) {
                 val said = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
-                dbg("STT onResults: $said")
                 if (!said.isNullOrBlank()) onText(said.lowercase(Locale.ROOT))
             }
             override fun onPartialResults(partialResults: Bundle?) {}
@@ -254,17 +234,18 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         }
         mainHandler.postDelayed({
-            dbg("STT startListening()")
             stt?.startListening(i)
         }, 250)
     }
 
     private fun reListenCurrent() {
-        dbg("reListenCurrent(): step=$step")
         when (step) {
             Step.ASK_INTENT -> listenIntent()
             Step.PRIMARY -> listenPrimary()
-            Step.CIP -> listenCip()
+            Step.CIP -> {
+                evalJs("""__agent && __agent.showCip();""", true)
+                listenCip()
+            }
             Step.FINAL -> listenFinal()
         }
     }
@@ -287,7 +268,6 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
         webView.addJavascriptInterface(object {
             @JavascriptInterface fun agentReady() {
-                dbg("JS agentReady()")
                 jsReady = true
                 while (jsQueue.isNotEmpty()) {
                     val js = jsQueue.removeFirst()
@@ -296,31 +276,24 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 }
                 if (pendingAskIntent) {
                     pendingAskIntent = false
-                    dbg("pendingAskIntent -> askIntent()")
                     askIntent()
                 }
             }
 
             @JavascriptInterface fun onPrimaryDetected() {
-                dbg("JS->Android onPrimaryDetected()")
                 runOnUiThread {
-                    if (step != Step.CIP) askCip() else dbg("Ya estábamos en CIP, ignoramos")
+                    if (step != Step.CIP) askCip()
                 }
             }
 
-            @JavascriptInterface fun onFinalDetected() {
-                dbg("JS->Android onFinalDetected() (placeholder)")
-            }
+            @JavascriptInterface fun onFinalDetected() { /* placeholder no-op */ }
 
-            @JavascriptInterface fun debug(msg: String) {
-                Log.d(TAG, "JS: $msg")
-                if (TOAST_DEBUG) Toast.makeText(this@SescamGuideActivity, "JS: $msg", Toast.LENGTH_SHORT).show()
-            }
+            // Silenciar logs JS -> Android
+            @JavascriptInterface fun debug(@Suppress("UNUSED_PARAMETER") msg: String) { /* no-op */ }
         }, "AndroidGuide")
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {
-                dbg("onPageFinished: $url -> injectAgent()")
                 injectAgent()
                 when (step) {
                     Step.PRIMARY -> evalJs("""__agent && __agent.showPrimary();""", true)
@@ -337,11 +310,9 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun evalJs(code: String, queueIfNotReady: Boolean = false) {
         if (!jsReady) {
-            dbg("evalJs() JS NOT READY -> queued")
             if (queueIfNotReady) jsQueue.addLast(code)
             return
         }
-        dbg("evalJs(): ${code.take(120)}...")
         if (Build.VERSION.SDK_INT >= 19) webView.evaluateJavascript(code, null)
         else webView.loadUrl("javascript:$code")
     }
@@ -350,7 +321,7 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         jsReady = false
         val js = """
       (function () {
-        if (window.__agent) { AndroidGuide.debug("agent already present"); AndroidGuide.agentReady(); return; }
+        if (window.__agent) { AndroidGuide.agentReady(); return; }
 
         // ---------- Utils ----------
         const norm = s => (s||"").toString().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim().toLowerCase();
@@ -358,11 +329,9 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         const highlight = (el) => {
           if (!el) return;
           el.scrollIntoView({behavior:"smooth", block:"center"});
-          // resalte visible tanto en hosts Ionic como en HTML normal
           el.style.outline = "4px solid #FF9800";
           el.style.outlineOffset = "2px";
           el.style.borderRadius = "10px";
-          // parpadeo suave para llamar la atención
           el.animate([{outlineColor:"#FF9800"},{outlineColor:"#FFC107"},{outlineColor:"#FF9800"}], {duration:800, iterations:2});
         };
 
@@ -376,31 +345,24 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
           } catch(e){ return false; }
         };
 
-        // Shadow helper: dentro de componentes Ionic a veces el input real está en shadowRoot
         const getInnerInput = (host) => {
           if (!host) return null;
-          // 1) hijo <input> en light DOM (muchas builds lo exponen)
           let inp = host.querySelector("input");
           if (inp) return inp;
-          // 2) dentro del shadow
           const sr = host.shadowRoot;
           if (sr) {
             inp = sr.querySelector("input, textarea");
             if (inp) return inp;
           }
-          // 3) algún input cercano
           const near = host.closest("ion-item, .item");
           return near ? (near.querySelector("input") || near.shadowRoot?.querySelector("input")) : null;
         };
 
         // ---------- Selectores concretos SESCAM ----------
-        // Inicio -> tarjeta "Cita Atención Primaria"
         const findPrimary = () => {
-          // por texto del título de la tarjeta
           const titles = Array.from(document.querySelectorAll("ion-card-title, .card-module ion-card-title, h2, a, button, ion-button"));
           const t = titles.find(el => norm(el.textContent).includes("cita atencion primaria"));
           if (t) return t.closest("ion-card") || t;
-          // alternativa: cualquier cosa que lleve a /citacion-primaria
           const link = Array.from(document.querySelectorAll("a, ion-button,[role='link']")).find(a=>{
             const h = (a.href || a.getAttribute("href") || "").toString();
             return h.includes("/citacion-primaria");
@@ -408,12 +370,10 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
           return link;
         };
 
-        // Pantalla CIP
         const findCipHost = () => document.querySelector("#input-cip") || document.querySelector("ion-input[id*='cip' i]");
         const findCipInput = () => getInnerInput(findCipHost());
 
-        // Botones finales
-        const findFinalBtn = (mode /* "PEDIR" | "VER" */) => {
+        const findFinalBtn = (mode) => {
           if (mode === "VER") {
             return document.getElementById("btn-ver-citas")
                 || Array.from(document.querySelectorAll("ion-button,button,a")).find(el => norm(el.textContent).includes("ver citas") || norm(el.textContent).includes("consultar citas"));
@@ -423,7 +383,6 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
           }
         };
 
-        // Farmacia / WiFi (inicio)
         const findFarmacia = () =>
           Array.from(document.querySelectorAll("ion-card-title, a, button, ion-button")).find(el => norm(el.textContent).includes("encuentra tu farmacia") || norm(el.textContent).includes("farmacia"));
         const findWifi = () =>
@@ -447,48 +406,43 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
           },
 
           // Inicio
-          showPrimary: () => { const el = findPrimary(); if (el){ highlight(el); AndroidGuide.debug("showPrimary OK"); } else AndroidGuide.debug("showPrimary NOT FOUND"); },
+          showPrimary: () => { const el = findPrimary(); if (el){ highlight(el); } },
           clickPrimary: () => {
             const el = findPrimary();
-            if (clickSafely(el)) { AndroidGuide.debug("clickPrimary OK"); AndroidGuide.onPrimaryDetected(); }
-            else AndroidGuide.debug("clickPrimary NOT FOUND");
+            if (clickSafely(el)) { AndroidGuide.onPrimaryDetected(); }
           },
 
-          showFarmacia: () => { const el = findFarmacia(); if (el){ highlight(el); AndroidGuide.debug("showFarmacia OK"); } else AndroidGuide.debug("showFarmacia NOT FOUND"); },
-          clickFarmacia: () => { const el = findFarmacia(); if (clickSafely(el)) AndroidGuide.debug("clickFarmacia OK"); else AndroidGuide.debug("clickFarmacia NOT FOUND"); },
+          showFarmacia: () => { const el = findFarmacia(); if (el){ highlight(el); } },
+          clickFarmacia: () => { const el = findFarmacia(); if (clickSafely(el)) {} },
 
-          showWifi: () => { const el = findWifi(); if (el){ highlight(el); AndroidGuide.debug("showWifi OK"); } else AndroidGuide.debug("showWifi NOT FOUND"); },
-          clickWifi: () => { const el = findWifi(); if (clickSafely(el)) AndroidGuide.debug("clickWifi OK"); else AndroidGuide.debug("clickWifi NOT FOUND"); },
+          showWifi: () => { const el = findWifi(); if (el){ highlight(el); } },
+          clickWifi: () => { const el = findWifi(); if (clickSafely(el)) {} },
 
           // CIP
           showCip: () => {
             const host = findCipHost(); const inp = findCipInput();
             const target = inp || host;
-            if (target){ highlight(target); AndroidGuide.debug("showCip OK"); }
-            else AndroidGuide.debug("showCip NOT FOUND");
+            if (target){ highlight(target); }
           },
           fillCip: (val) => {
             const host = findCipHost(); const inp = findCipInput();
             const target = inp || host;
-            if (!target){ AndroidGuide.debug("fillCip NOT FOUND"); return; }
+            if (!target){ return; }
             target.focus();
             target.value = val;
             target.dispatchEvent(new Event("input", {bubbles:true}));
             target.dispatchEvent(new Event("change", {bubbles:true}));
-            // eventos propios de Ionic
             target.dispatchEvent(new CustomEvent("ionInput", {bubbles:true}));
             target.dispatchEvent(new CustomEvent("ionChange", {bubbles:true}));
             highlight(target);
-            AndroidGuide.debug("fillCip OK");
           },
 
           // Botón final (Pedir / Ver)
-          showFinal: (mode) => { const el = findFinalBtn(mode); if (el){ highlight(el); AndroidGuide.debug("showFinal "+mode+" OK"); } else AndroidGuide.debug("showFinal "+mode+" NOT FOUND"); },
-          clickFinal: (mode) => { const el = findFinalBtn(mode); if (clickSafely(el)) AndroidGuide.debug("clickFinal "+mode+" OK"); else AndroidGuide.debug("clickFinal "+mode+" NOT FOUND"); }
+          showFinal: (mode) => { const el = findFinalBtn(mode); if (el){ highlight(el); } },
+          clickFinal: (mode) => { const el = findFinalBtn(mode); if (clickSafely(el)) {} }
         };
 
-        // Reaccionar a cambios en apps SPA (Angular/Ionic)
-        const mo = new MutationObserver(() => {/* Android decide cuándo llamar showX/clickX */});
+        const mo = new MutationObserver(() => {/* no-op */});
         mo.observe(document.documentElement || document.body, {childList:true, subtree:true});
 
         AndroidGuide.agentReady();
@@ -499,12 +453,9 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         else webView.loadUrl("javascript:$js")
     }
 
-
-
     // ==================== Pasos ====================
 
     private fun askIntent() {
-        dbg("askIntent() overlays")
         step = Step.ASK_INTENT
         evalJs("""__agent && __agent.showPrimary();""", true)
         evalJs("""__agent && __agent.showFarmacia();""", true)
@@ -512,9 +463,7 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun listenIntent() {
-        dbg("listenIntent()")
         listenOnce { said ->
-            dbg("Intent heard: $said")
             when {
                 "cita" in said -> {
                     chosenFinal = null
@@ -524,9 +473,7 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     banner("Pulsa: Farmacia")
                     evalJs("""__agent && __agent.showFarmacia();""", true)
                     listenOnce { s2 ->
-                        dbg("Farmacia follow-up: $s2")
                         if ("pulsa" in s2) {
-                            dbg("Farmacia: pulsa por mí -> clickFarmacia")
                             evalJs("""__agent && __agent.clickFarmacia();""")
                         } else {
                             listenIntent()
@@ -537,9 +484,7 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     banner("Pulsa: Wi-Fi")
                     evalJs("""__agent && __agent.showWifi();""", true)
                     listenOnce { s2 ->
-                        dbg("WiFi follow-up: $s2")
                         if ("pulsa" in s2) {
-                            dbg("WiFi: pulsa por mí -> clickWifi")
                             evalJs("""__agent && __agent.clickWifi();""")
                         } else {
                             listenIntent()
@@ -547,7 +492,6 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     }
                 }
                 else -> {
-                    dbg("Intent desconocido -> repetir pregunta")
                     askIntentSpeakOnly()
                 }
             }
@@ -555,18 +499,14 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun goPrimary() {
-        dbg("goPrimary()")
         step = Step.PRIMARY
         evalJs("""__agent && __agent.showPrimary();""", true)
         speakThen("Pulsa el botón Cita Atención Primaria. Si quieres que lo pulse por ti, di: pulsa por mí.")
     }
 
     private fun listenPrimary() {
-        dbg("listenPrimary()")
         listenOnce { said ->
-            dbg("Primary heard: $said")
             if ("pulsa" in said) {
-                dbg("Primary: pulsa por mí -> clickPrimary")
                 evalJs("""__agent && __agent.clickPrimary();""", true)
             } else {
                 listenPrimary()
@@ -575,18 +515,14 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun askCip() {
-        dbg("askCip()")
         step = Step.CIP
-        evalJs("""__agent && __agent.showCip();""", true)
+        // 👉 Ya NO resaltamos aquí. Se hará tras hablar, justo antes de escuchar.
         speakThen("Dime tu C I P, o introdúcelo en el recuadro resaltado.")
     }
 
     private fun listenCip() {
-        dbg("listenCip()")
         listenOnce { said ->
-            dbg("CIP heard raw: $said")
             val cip = said.uppercase(Locale.ROOT).replace("[^A-Z0-9]".toRegex(), "")
-            dbg("CIP parsed: $cip")
             if (cip.length < 4) {
                 evalJs("""__agent && __agent.showCip();""", true)
                 speakThen("No he entendido bien el C I P. Puedes escribirlo o dictarlo de nuevo.")
@@ -598,29 +534,34 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun askFinal() {
-        dbg("askFinal()")
         step = Step.FINAL
-        if (chosenFinal == null) chosenFinal = FinalAction.PEDIR
-        val act = if (chosenFinal == FinalAction.VER) "VER" else "PEDIR"
-        evalJs("""__agent && __agent.showFinal("$act");""", true)
-        speakThen(
-            if (act == "VER")
-                "Pulsa el botón Ver o Consultar citas. Si quieres que lo pulse por ti, di: pulsa por mí."
-            else
-                "Pulsa el botón Pedir cita. Si quieres que lo pulse por ti, di: pulsa por mí."
-        )
+        chosenFinal = null
+        // Da un contexto visual por defecto (PEDIR) mientras pregunta.
+        evalJs("""__agent && __agent.showFinal("PEDIR");""", true)
+        speakThen("¿Qué quieres hacer: pedir cita o ver citas?")
     }
 
     private fun listenFinal() {
-        dbg("listenFinal()")
         listenOnce { said ->
-            dbg("Final heard: $said")
-            if ("pulsa" in said) {
-                val act = if (chosenFinal == FinalAction.VER) "VER" else "PEDIR"
-                dbg("Final: pulsa por mí -> clickFinal($act)")
-                evalJs("""__agent && __agent.clickFinal("$act");""", true)
-            } else {
-                listenFinal()
+            val s = said.lowercase(Locale.ROOT)
+            when {
+                "ver" in s -> {
+                    chosenFinal = FinalAction.VER
+                    evalJs("""__agent && __agent.showFinal("VER");""", true)
+                    speakThen("Pulsa el botón Ver citas. Si quieres que lo pulse por ti, di: pulsa por mí.")
+                }
+                "pedir" in s -> {
+                    chosenFinal = FinalAction.PEDIR
+                    evalJs("""__agent && __agent.showFinal("PEDIR");""", true)
+                    speakThen("Pulsa el botón Pedir cita. Si quieres que lo pulse por ti, di: pulsa por mí.")
+                }
+                "pulsa" in s -> {
+                    val act = if (chosenFinal == FinalAction.VER) "VER" else "PEDIR"
+                    evalJs("""__agent && __agent.clickFinal("$act");""", true)
+                }
+                else -> {
+                    speakThen("No te he entendido. ¿Quieres pedir cita o ver citas?")
+                }
             }
         }
     }
