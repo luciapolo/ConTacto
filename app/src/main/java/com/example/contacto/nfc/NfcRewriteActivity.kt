@@ -509,6 +509,8 @@ private fun HelpStrip() {
 
 /** =========== Construcción del NDEF =========== */
 
+/** =========== Construcción del NDEF =========== */
+
 private fun buildMessage(type: PayloadType, rawInput: String): NdefMessage {
     val record: NdefRecord = when (type) {
         PayloadType.CALL -> {
