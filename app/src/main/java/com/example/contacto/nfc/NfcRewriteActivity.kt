@@ -24,10 +24,12 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Link
@@ -139,7 +141,7 @@ fun NfcRewriteScreen(
     var waiting by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var lastReason by remember { mutableStateOf<String?>(null) }
-    var lastSuccess by remember { mutableStateOf<Boolean?>(null) } // <- para icono/tinte correcto
+    var lastSuccess by remember { mutableStateOf<Boolean?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
     // --- Picker de contactos + permiso ---
@@ -204,7 +206,6 @@ fun NfcRewriteScreen(
     Scaffold(
         containerColor = Color.White,
         topBar = {
-            // App bar blanca, acento de marca, y SIN el chip de bytes
             LargeTopAppBar(
                 title = {
                     Column(Modifier.fillMaxWidth()) {
@@ -255,7 +256,7 @@ fun NfcRewriteScreen(
         ) {
             if (!nfcAvailable) WarningCard()
 
-            // Panel tintado para dar “caja” al flujo (como Read Now)
+            // Panel tintado
             Surface(
                 color = brand.copy(alpha = 0.08f),
                 shape = MaterialTheme.shapes.large,
@@ -265,7 +266,7 @@ fun NfcRewriteScreen(
                     modifier = Modifier.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Tarjeta principal blanca
+                    // Tarjeta principal
                     ElevatedCard(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
@@ -297,7 +298,6 @@ fun NfcRewriteScreen(
                                         },
                                         modifier = Modifier.fillMaxWidth()
                                     )
-
                                     PayloadType.URL -> OutlinedTextField(
                                         value = input,
                                         onValueChange = { input = it; error = null },
@@ -314,6 +314,20 @@ fun NfcRewriteScreen(
                                     )
                                 }
                             }
+
+                            // --- Accesos rápidos SOLO para URL ---
+                            if (type == PayloadType.URL) {
+                                QuickLinks(
+                                    brand = brand,
+                                    onPick = { url ->
+                                        type = PayloadType.URL
+                                        input = TextFieldValue(url)
+                                        error = null
+                                    }
+                                )
+                            }
+// --- FIN Accesos rápidos ---
+
 
                             // Acciones
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -426,7 +440,7 @@ private fun PayloadSelector(selected: PayloadType, onSelect: (PayloadType) -> Un
 private fun StatusBanner(text: String, brand: Color) {
     val infinite = rememberInfiniteTransition(label = "pulse")
     val alpha by infinite.animateFloat(
-        initialValue = 0.55f,   // un poco más visible
+        initialValue = 0.55f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(1000, easing = LinearEasing),
@@ -457,7 +471,6 @@ private fun StatusBanner(text: String, brand: Color) {
                 .clip(CircleShape)
                 .background(brand.copy(alpha = 0.22f))
         ) {
-            // Punto "parpadeante"
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -507,7 +520,72 @@ private fun HelpStrip() {
     }
 }
 
-/** =========== Construcción del NDEF =========== */
+/** =========== Accesos rápidos =========== */
+
+private data class QuickLink(val title: String, val url: String, val subtitle: String)
+
+@Composable
+private fun QuickLinks(
+    brand: Color,
+    onPick: (String) -> Unit
+) {
+    val links = listOf(
+        QuickLink(
+            title = "Ruralvía",
+            url = "https://bancadigital.ruralvia.com/CA-FRONT/NBE/web/particulares/#/login",
+            subtitle = "Acceso banca digital"
+        ),
+        QuickLink(
+            title = "SESCAM",
+            url = "https://sescam.jccm.es/misaluddigital/app/inicio",
+            subtitle = "Mi Salud Digital"
+        )
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            "Accesos rápidos",
+            style = MaterialTheme.typography.titleMedium,
+            color = brand
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            links.forEach { item ->
+                ElevatedCard(
+                    shape = MaterialTheme.shapes.extraLarge,
+                    colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onPick(item.url) }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Filled.Link,
+                            contentDescription = null,
+                            tint = brand
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(item.title, style = MaterialTheme.typography.titleSmall, color = brand)
+                            ProvideTextStyle(MaterialTheme.typography.bodySmall) {
+                                Text(item.subtitle, modifier = Modifier.alpha(0.9f))
+                            }
+                        }
+                        Icon(
+                            Icons.AutoMirrored.Filled.OpenInNew,
+                            contentDescription = null,
+                            tint = brand.copy(alpha = 0.85f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 
 /** =========== Construcción del NDEF =========== */
 
@@ -529,7 +607,7 @@ private fun validateInput(type: PayloadType, input: String): String? {
     return when (type) {
         PayloadType.CALL -> {
             val tel = normalizePhone(input)
-            if (tel.isEmpty()) "Introduce un número válido (ej.: +34911222333)"; else null
+            if (tel.isEmpty()) "Introduce un número válido (ej.: +34911222333)" else null
         }
         PayloadType.URL -> {
             val url = ensureUrlScheme(input)
