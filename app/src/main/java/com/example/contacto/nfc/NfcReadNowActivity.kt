@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import com.example.contacto.web.SescamGuideActivity
+import com.example.contacto.web.BankGuideActivity
 
 class NfcReadNowActivity : ComponentActivity() {
 
@@ -41,6 +42,7 @@ class NfcReadNowActivity : ComponentActivity() {
 
     // Guardamos un tel: pendiente mientras pedimos permiso
     private var pendingTelUri: Uri? = null
+
 
     private val callPermLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -76,20 +78,37 @@ class NfcReadNowActivity : ComponentActivity() {
         val scheme = uri.scheme?.lowercase()
         if (scheme == "http" || scheme == "https") {
             val host = (uri.host ?: "").lowercase()
+            val path = (uri.path ?: "").lowercase()
+            val frag = (uri.fragment ?: "").lowercase()
 
-            val looksLikeSescam = host in SESCAM_HOSTS
-            if (looksLikeSescam) {
-                // Lanza la guía con la URL del tag NFC
-                val i = Intent(this, SescamGuideActivity::class.java).apply {
-                    putExtra(SescamGuideActivity.EXTRA_START_URL, uri.toString())
-                    // opcionalmente puedes añadir flags si vienes de otra task:
-                    // addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            val looksLikeRuralvia =
+                host == "bancadigital.ruralvia.com" &&
+                        path.startsWith("/ca-front/nbe/web/particulares") &&
+                        (frag?.contains("/login") == true)
+
+            val looksLikeSescam =
+                host.contains("sescam.jccm.es") ||
+                        host.contains("sescam.castillalamancha.es") ||
+                        path.contains("/misaluddigital")
+
+            when {
+                looksLikeRuralvia -> {
+                    startActivity(
+                        Intent(this, com.example.contacto.web.BankGuideActivity::class.java)
+                            .putExtra(com.example.contacto.web.BankGuideActivity.EXTRA_START_URL, uri.toString())
+                    )
+                    return
                 }
-                startActivity(i)
-            } else {
-                // Comportamiento genérico para otros enlaces
-                val view = Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)
-                startActivity(view)
+                looksLikeSescam -> {
+                    startActivity(
+                        Intent(this, com.example.contacto.web.SescamGuideActivity::class.java)
+                            .putExtra(com.example.contacto.web.SescamGuideActivity.EXTRA_START_URL, uri.toString())
+                    )
+                    return
+                }
+                else -> {
+                    startActivity(Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE))
+                }
             }
         }
     }

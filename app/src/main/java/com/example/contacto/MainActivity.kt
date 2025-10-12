@@ -22,6 +22,8 @@ import com.example.contacto.nfc.NfcRewriteActivity
 import com.example.contacto.ui.screens.HomeScreen
 import com.example.contacto.ui.theme.ConTactoTheme
 import com.example.contacto.web.SescamGuideActivity
+import com.example.contacto.web.BankGuideActivity
+
 
 class MainActivity : ComponentActivity() {
 
@@ -108,15 +110,22 @@ class MainActivity : ComponentActivity() {
             val url = runCatching { readUrlFromTag(tag) }.getOrNull()
 
             if (!url.isNullOrBlank()) {
-                if (isSescamUrl(url)) {
-                    // 2a) Si es URL del SESCAM -> lanzar la guía directamente en la app
-                    startActivity(
-                        Intent(this, SescamGuideActivity::class.java)
-                            .putExtra("url", url)
-                    )
-                } else {
-                    // 2b) Si no es del SESCAM -> abrir en navegador del sistema
-                    openInBrowser(url)
+                when {
+                    isSescamUrl(url) -> {
+                        startActivity(
+                            Intent(this, SescamGuideActivity::class.java)
+                                .putExtra(SescamGuideActivity.EXTRA_START_URL, url)
+                        )
+                    }
+                    isRuralviaUrl(url) -> {
+                        startActivity(
+                            Intent(this, BankGuideActivity::class.java)
+                                .putExtra(BankGuideActivity.EXTRA_START_URL, url)
+                        )
+                    }
+                    else -> {
+                        openInBrowser(url)
+                    }
                 }
             } else {
                 // 3) Si no contiene URL legible, delega a tu lector existente (no se pierde funcionalidad)
@@ -169,6 +178,22 @@ class MainActivity : ComponentActivity() {
             false
         }
     }
+
+    private fun isRuralviaUrl(url: String): Boolean {
+        return try {
+            val u = Uri.parse(url)
+            val host = (u.host ?: "").lowercase()
+            val path = (u.path ?: "").lowercase()
+            val frag = (u.fragment ?: "").lowercase()
+
+            host == "bancadigital.ruralvia.com" &&
+                    path.contains("/ca-front/nbe/web/particulares") &&
+                    frag.contains("/login")
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
 
     private fun openInBrowser(url: String) {
         try {

@@ -12,7 +12,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
-
+import com.example.contacto.web.SescamGuideActivity
+import com.example.contacto.web.BankGuideActivity
 
 class NfcReaderActivity : ComponentActivity() {
 
@@ -44,7 +45,7 @@ class NfcReaderActivity : ComponentActivity() {
         intent.data?.let { data ->
             when (data.scheme?.lowercase()) {
                 "tel" -> { makeCall(data); return }
-                "http", "https" -> { openLink(data); return }
+                "http", "https" -> { routeByUrl(data.toString()); return }
             }
         }
 
@@ -54,25 +55,63 @@ class NfcReaderActivity : ComponentActivity() {
 
         when {
             uri != null && uri.scheme.equals("tel", true) -> makeCall(uri)
-            uri != null && (uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) -> openLink(uri)
+            uri != null && (uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) -> routeByUrl(uri.toString())
             text != null && text.startsWith("tel:", ignoreCase = true) -> makeCall(text.trim().toUri())
-            text != null && (text.startsWith("http://", true) || text.startsWith("https://", true)) -> openLink(text.trim().toUri())
+            text != null && (text.startsWith("http://", true) || text.startsWith("https://", true)) -> routeByUrl(text.trim())
             else -> finish()
         }
     }
 
-    // --- Abrir enlace en navegador ---
-    private fun openLink(uri: Uri) {
-        // Pequeño allowlist de esquemas por seguridad:
-        val scheme = uri.scheme?.lowercase()
-        if (scheme != "http" && scheme != "https") { finish(); return }
-
-        val view = Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)
-        startActivity(view)
-        finish()
+    /** -------- Router de enlaces: asistente Banco/SESCAM o navegador -------- */
+    private fun routeByUrl(url: String) {
+        when {
+            isRuralviaUrl(url) -> {
+                startActivity(
+                    Intent(this, BankGuideActivity::class.java)
+                        .putExtra(BankGuideActivity.EXTRA_START_URL, url)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+                finish()
+            }
+            isSescamUrl(url) -> {
+                startActivity(
+                    Intent(this, SescamGuideActivity::class.java)
+                        .putExtra(SescamGuideActivity.EXTRA_START_URL, url)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+                finish()
+            }
+            else -> {
+                // No coincide: abrir en navegador (comportamiento anterior)
+                val view = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
+                startActivity(view)
+                finish()
+            }
+        }
     }
 
-    // --- Llamadas ---
+    // --- Matchers de URL ---
+    private fun isRuralviaUrl(url: String): Boolean = try {
+        val u = Uri.parse(url)
+        val host = (u.host ?: "").lowercase()
+        val path = (u.path ?: "").lowercase()
+        val frag = (u.fragment ?: "").lowercase()
+        // https://bancadigital.ruralvia.com/CA-FRONT/NBE/web/particulares/#/login
+        host == "bancadigital.ruralvia.com" &&
+                path.startsWith("/ca-front/nbe/web/particulares") &&
+                frag.contains("/login")
+    } catch (_: Throwable) { false }
+
+    private fun isSescamUrl(url: String): Boolean = try {
+        val u = Uri.parse(url)
+        val host = (u.host ?: "").lowercase()
+        val path = (u.path ?: "").lowercase()
+        host.contains("sescam.jccm.es") ||
+                host.contains("sescam.castillalamancha.es") ||
+                path.contains("/misaluddigital")
+    } catch (_: Throwable) { false }
+
+    // --- Abrir enlace tel: con permisos ---
     private fun makeCall(tel: Uri) {
         val granted = ContextCompat.checkSelfPermission(
             this, Manifest.permission.CALL_PHONE

@@ -102,6 +102,23 @@
                 <data android:scheme="https" android:host="sescam.castillalamancha.es" android:pathPrefix="/misaluddigital" />
             </intent-filter>
 
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="https"
+                    android:host="bancadigital.ruralvia.com"
+                    android:pathPrefix="/CA-FRONT/NBE/web/particulares" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https"
+                    android:host="bancadigital.ruralvia.com"
+                    android:pathPrefix="/CA-FRONT/NBE/web/particulares" />
+            </intent-filter>
+
             <!-- (Opcional) Deep link de URLs del SESCAM -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -122,6 +139,10 @@
             android:name=".web.SescamGuideActivity"
             android:exported="false"
             android:label="Guía SESCAM" />
+
+        <activity
+            android:name=".web.BankGuideActivity"
+            android:exported="false" />
 
 
         <!-- Como el namespace es com.example.contacto, con .MainActivity basta -->

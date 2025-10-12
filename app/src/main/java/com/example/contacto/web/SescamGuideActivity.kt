@@ -21,6 +21,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import com.example.contacto.web.BankGuideActivity.Step
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -73,6 +74,44 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    private fun Int.dp(ctx: android.content.Context) =
+        (this * ctx.resources.displayMetrics.density).toInt()
+
+    private fun Float.dp(ctx: android.content.Context) =
+        (this * ctx.resources.displayMetrics.density)
+
+    // Botón redondo tipo FAB con ripple y tinte blanco
+    private fun makeRoundFab(
+        ctx: android.content.Context,
+        iconRes: Int,
+        contentDesc: String
+    ): ImageButton {
+        val btn = ImageButton(ctx)
+
+        // Icono
+        btn.setImageResource(iconRes)
+        btn.imageTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.WHITE)
+        btn.scaleType = android.widget.ImageView.ScaleType.CENTER
+
+        // Fondo redondo con ripple
+        val base = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = 20f.dp(ctx)
+            setColor(0xFF4F46E5.toInt()) // Indigo
+        }
+        val ripple = android.graphics.drawable.RippleDrawable(
+            android.content.res.ColorStateList.valueOf(0x33FFFFFF),
+            base,
+            null
+        )
+        btn.background = ripple
+
+        // Padding y elevación
+        btn.setPadding(12.dp(ctx), 12.dp(ctx), 12.dp(ctx), 12.dp(ctx))
+        androidx.core.view.ViewCompat.setElevation(btn, 8f)
+        btn.contentDescription = contentDesc
+        return btn
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -92,7 +131,7 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             setImageResource(android.R.drawable.ic_media_play)
             contentDescription = "Repetir"
             setBackgroundResource(android.R.drawable.btn_default_small)
-            setOnClickListener { lastBanner?.let { banner(it) } }
+            setOnClickListener { repeatPromptAndRehighlight() }  // <— cambio clave
         }
         val btnMic = ImageButton(this).apply {
             setImageResource(android.R.drawable.ic_btn_speak_now)
@@ -100,19 +139,21 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             setBackgroundResource(android.R.drawable.btn_default_small)
             setOnClickListener { reListenCurrent() }
         }
+        val size = 72.dp(this)          // antes 150px; ahora ~104dp, se ven grandes y consistentes
+        val gap = 12.dp(this)
+        val spacing = 12.dp(this)
+        val micBottom = 24.dp(this)
+        val repeatBottom = micBottom + size + spacing
+
         root.addView(FrameLayout(this).apply {
-            addView(
-                btnRepeat,
-                FrameLayout.LayoutParams(150, 150, Gravity.END or Gravity.BOTTOM).apply {
-                    rightMargin = 32; bottomMargin = 220
-                }
-            )
-            addView(
-                btnMic,
-                FrameLayout.LayoutParams(150, 150, Gravity.END or Gravity.BOTTOM).apply {
-                    rightMargin = 32; bottomMargin = 40
-                }
-            )
+            addView(btnRepeat, FrameLayout.LayoutParams(size, size).apply {
+                gravity = android.view.Gravity.END or android.view.Gravity.BOTTOM
+                rightMargin = gap; bottomMargin = repeatBottom
+            })
+            addView(btnMic, FrameLayout.LayoutParams(size, size).apply {
+                gravity = android.view.Gravity.END or android.view.Gravity.BOTTOM
+                rightMargin = gap; bottomMargin = micBottom
+            })
         })
 
         // ------- TTS
@@ -294,8 +335,12 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }
         }
     }
-
+    private var lastCtxTs: Long = 0L
     private fun handleContextChange(ctx: String) {
+        val now = System.currentTimeMillis()
+        if (ctx == lastContext && now - lastCtxTs < 300) return  // <- evita doble disparo inmediato
+        lastCtxTs = now
+
         val prev = lastContext
         lastContext = ctx
 
@@ -356,6 +401,29 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
           AndroidGuide.agentReady(); 
           return; 
         }
+        
+        (function ensureHighlightCss(){
+    const styleId="__guide_style_common";
+    if (!document.getElementById(styleId)) {
+      const st=document.createElement("style");
+      st.id=styleId;
+      st.textContent = `
+        @keyframes __pulse_v2 {
+          0%   { box-shadow: 0 0 0 0 rgba(255,152,0,.55), 0 0 0 10px rgba(255,152,0,0); }
+          70%  { box-shadow: 0 0 0 6px rgba(255,152,0,.35), 0 0 0 18px rgba(255,152,0,0); }
+          100% { box-shadow: 0 0 0 0 rgba(255,152,0,.35), 0 0 0 0 rgba(255,152,0,0); }
+        }
+        .__guide_highlight{
+          outline:3px solid #ff9800 !important;
+          outline-offset:2px !important;
+          border-radius:14px !important;
+          animation:__pulse_v2 1.8s ease-out infinite;
+          transition: outline-color .2s ease, box-shadow .2s ease;
+        }
+      `;
+      document.head.appendChild(st);
+    }
+  })();
 
         const norm = s => (s||"").toString().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim().toLowerCase();
 
@@ -365,18 +433,12 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         };
 
         const highlight = (el) => {
-          if (!el) return;
-          el.scrollIntoView({behavior:"smooth", block:"center"});
-          document.querySelectorAll(".__guide_highlight").forEach(x=>{
-            x.classList.remove("__guide_highlight");
-            x.style.outline = ""; x.style.outlineOffset = ""; x.style.borderRadius = ""; x.style.boxShadow = "";
-          });
-          el.classList.add("__guide_highlight");
-          el.style.outline = "4px solid #ff9800";
-          el.style.outlineOffset = "2px";
-          el.style.borderRadius = "12px";
-          el.style.boxShadow = "0 0 0 6px rgba(255,152,0,0.15)";
-        };
+  if (!el) return;
+  el.scrollIntoView({behavior:"smooth", block:"center"});
+  document.querySelectorAll(".__guide_highlight").forEach(x=>x.classList.remove("__guide_highlight"));
+  el.classList.add("__guide_highlight");
+};
+
 
         const clickSafely = (el) => {
           if (!el) return false;
@@ -483,20 +545,34 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         };
 
         const ensureBanner = () => {
-          let b = document.getElementById("__guide_banner");
-          if (!b) {
-            b = document.createElement("div");
-            b.id="__guide_banner";
-            Object.assign(b.style,{
-              position:"fixed",left:"16px",right:"16px",bottom:"16px",zIndex:2147483647,
-              background:"rgba(33,33,33,.95)",color:"#fff",padding:"14px 16px",borderRadius:"14px",
-              fontSize:"17px",lineHeight:"1.35",boxShadow:"0 10px 26px rgba(0,0,0,.35)",pointerEvents:"none"
-            });
-            b.innerHTML = "";
-            document.body.appendChild(b);
-          }
-          return b;
-        };
+  let b = document.getElementById("__guide_banner");
+  if (!b) {
+    b = document.createElement("div");
+    b.id="__guide_banner";
+    const BANNER_OFFSET_TOP = 72;
+    Object.assign(b.style,{
+      position:"fixed",
+      top:"calc(env(safe-area-inset-top, 0px) + " + BANNER_OFFSET_TOP + "px)",              
+      left:"16px",
+      right:"16px",
+      zIndex:2147483647,
+      background:"rgba(32,32,36,.96)",
+      color:"#fff",
+      padding:"14px 16px",
+      borderRadius:"14px",
+      fontSize:"17px",
+      lineHeight:"1.35",
+      boxShadow:"0 8px 24px rgba(0,0,0,.35)",
+      border:"1px solid rgba(255,255,255,.08)",
+      pointerEvents:"none",
+      textAlign:"center"
+    });
+    b.innerHTML = "";
+    document.body.appendChild(b);
+  }
+  return b;
+};
+
 
         const computeContext = () => {
           // detectar formulario de farmacia por campos típicos
@@ -873,6 +949,35 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    // Repetir: vuelve a decir en voz y re-resalta el paso actual (Sescam)
+    private fun repeatPromptAndRehighlight() {
+        lastBanner?.let { html ->
+            // Re-highlight según el paso
+            when (step) {
+                Step.ASK_INTENT -> {
+                    evalJs("""__agent && __agent.showPrimary();""")
+                    evalJs("""__agent && __agent.showFarmacia();""")
+                    evalJs("""__agent && __agent.showWifi();""")
+                }
+                Step.PRIMARY -> evalJs("""__agent && __agent.showPrimary();""")
+                Step.CIP     -> evalJs("""__agent && __agent.showCip();""")
+                Step.FINAL   -> {
+                    // Vuelve a resaltar el último botón sugerido (si hay), si no, nada
+                    evalJs("""__agent && __agent.showFinal("VER");""")
+                    evalJs("""__agent && __agent.showFinal("PEDIR");""")
+                }
+                Step.FAR_PROV -> evalJs("""__agent && __agent.focusProvincia && __agent.focusProvincia();""")
+                Step.FAR_LOC  -> evalJs("""__agent && __agent.focusLocalidad && __agent.focusLocalidad();""")
+                Step.FAR_FECHA-> evalJs("""__agent && __agent.focusFecha && __agent.focusFecha();""")
+            }
+            // Forzar que lo vuelva a decir
+            val plain = html.replace(Regex("<[^>]+>"), " ")
+            runCatching { tts.stop() }
+            tts.speak(plain, TextToSpeech.QUEUE_FLUSH, null, java.util.UUID.randomUUID().toString())
+        }
+    }
+
+
 
 }
 
@@ -929,6 +1034,8 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT)
         return fmt.format(cal.time)
     }
+
+
 
     /**
      * Decodificador de letras/números en español para el CIP.
