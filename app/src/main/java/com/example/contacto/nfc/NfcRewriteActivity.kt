@@ -14,66 +14,58 @@ import android.provider.ContactsContract
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.SdCard
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import com.example.contacto.ui.theme.ConTactoTheme
-import androidx.annotation.StringRes
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.res.stringResource
 import com.example.contacto.R
-
-// Icons
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 
 class NfcRewriteActivity : ComponentActivity() {
 
     private var nfcAdapter: NfcAdapter? = null
 
-    // Handler que la UI registrará para recibir el resultado detallado
     private var onWriteResult: ((WriteResult) -> Unit)? = null
 
     private val readerCallback = NfcAdapter.ReaderCallback { tag ->
-        // ========= Diagnóstico =========
-        /*
-        val idHex = tag.id.joinToString("") { "%02X".format(it) }
-        val techsCsv = tag.techList.joinToString()
-        val ndef = Ndef.get(tag)
-        val fmt = NdefFormatable.get(tag)
-        val diagHeader = buildString {
-            append("UID=$idHex  techs=$techsCsv")
-            append(
-                if (ndef != null) " | NDEF OK (max=${ndef.maxSize}B)"
-                else if (fmt != null) " | NdefFormatable OK"
-                else " | No NDEF/Formatable"
-            )
-        }
-        */
-
-        // ========= Flujo mínimo: escribir si hay mensaje pendiente =========
         val msg = pendingMessage
         val result: WriteResult = if (msg != null) {
             writeNdefToTagWithReason(tag, msg)
         } else {
             WriteResult(false, "No hay mensaje preparado.")
         }
-
-        // (Opcional) Si activaste el diagnóstico ampliado, añade el header:
-        // val merged = result.copy(reason = listOf(diagHeader, result.reason).filterNotNull().joinToString(" | "))
-        // onWriteResult?.invoke(merged)
-
-        // Diagnóstico mínimo: solo confirma éxito/fracaso
         onWriteResult?.invoke(result)
     }
-
 
     private var pendingMessage: NdefMessage? = null
 
@@ -86,8 +78,7 @@ class NfcRewriteActivity : ComponentActivity() {
                 NfcRewriteScreen(
                     onBack = { finish() },
                     nfcAvailable = nfcAdapter != null,
-                    // La UI me dice qué mensaje escribir y yo activo el ReaderMode
-                    onStartListening = { message, _ /* ignoramos el boolean callback */ ->
+                    onStartListening = { message, _ ->
                         pendingMessage = message
                         enableReaderMode()
                     },
@@ -95,7 +86,6 @@ class NfcRewriteActivity : ComponentActivity() {
                         disableReaderMode()
                         pendingMessage = null
                     },
-                    // La UI registra aquí su handler para recibir el resultado
                     registerResultHandler = { handler ->
                         onWriteResult = handler
                     }
@@ -138,9 +128,8 @@ fun NfcRewriteScreen(
     nfcAvailable: Boolean,
     onStartListening: (NdefMessage, (Boolean) -> Unit) -> Unit,
     onStopListening: () -> Unit,
-    // NUEVO: en vez de onWriteResult (callback directo), registramos el handler
     registerResultHandler: ((WriteResult) -> Unit) -> Unit
-){
+) {
     val context = LocalContext.current
 
     var type by remember { mutableStateOf(PayloadType.CALL) }
@@ -203,125 +192,177 @@ fun NfcRewriteScreen(
     }
     // --- Fin picker de contactos ---
 
-    // Construye el mensaje según el tipo elegido
     val messageToWrite by remember(type, input) {
         mutableStateOf(buildMessage(type, input.text))
     }
 
-    // Tamaño estimado (ayuda para ver si cabe en el tag)
     val estimatedBytes = remember(messageToWrite) { messageToWrite.toByteArray().size }
+
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("Reescribir NFC") },
+            LargeTopAppBar(
+                title = {
+                    Column(Modifier.fillMaxWidth()) {
+                        Text("Reescribir NFC", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            text = if (nfcAvailable) "Prepara y escribe una etiqueta" else stringResource(R.string.nfc_not_available),
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.alpha(0.85f)
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = {
                         if (waiting) onStopListening()
                         onBack()
-                    }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
-                    }
-                }
+                    }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver") }
+                },
+                actions = {
+                    StatChip(icon = Icons.Filled.SdCard, label = "${estimatedBytes} B")
+                },
+                colors = TopAppBarDefaults.largeTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ),
+                scrollBehavior = scrollBehavior
             )
         }
     ) { inner ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(inner)
+                .systemBarsPadding()
+                .padding(horizontal = 16.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                if (!nfcAvailable) WarningCard()
+            Spacer(Modifier.height(8.dp))
 
-                // Selector de tipo
-                SegmentedButtons(
-                    type = type,
-                    onTypeChange = { type = it; error = null; status = null }
+            if (!nfcAvailable) WarningCard()
+
+            // Tarjeta principal
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
                 )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Selector con iconos
+                    PayloadSelector(
+                        selected = type,
+                        onSelect = { type = it; error = null; status = null }
+                    )
 
-                // Campo según tipo
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { input = it; error = null },
-                    label = {
-                        Text(
-                            when (type) {
-                                PayloadType.CALL -> "Número a llamar (p.ej. +34911222333)"
-                                PayloadType.URL -> "URL (p.ej. https://miweb.com)"
+                    Crossfade(targetState = type, label = "field") { current ->
+                        when (current) {
+                            PayloadType.CALL -> OutlinedTextField(
+                                value = input,
+                                onValueChange = { input = it; error = null },
+                                leadingIcon = { Icon(Icons.Filled.Phone, contentDescription = null) },
+                                label = { Text("Número a llamar (p.ej. +34911222333)") },
+                                placeholder = { Text("+34…") },
+                                isError = error != null,
+                                supportingText = {
+                                    AnimatedVisibility(visible = error != null) {
+                                        Text(text = error ?: "", color = MaterialTheme.colorScheme.error)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            PayloadType.URL -> OutlinedTextField(
+                                value = input,
+                                onValueChange = { input = it; error = null },
+                                leadingIcon = { Icon(Icons.Filled.Link, contentDescription = null) },
+                                label = { Text("URL (p.ej. https://miweb.com)") },
+                                placeholder = { Text("https://…") },
+                                isError = error != null,
+                                supportingText = {
+                                    AnimatedVisibility(visible = error != null) {
+                                        Text(text = error ?: "", color = MaterialTheme.colorScheme.error)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+
+                    // Acciones
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(
+                            modifier = Modifier.weight(1f),
+                            enabled = nfcAvailable && !waiting,
+                            onClick = {
+                                val validation = validateInput(type, input.text)
+                                if (validation != null) { error = validation; return@Button }
+
+                                status = "Acerca una etiqueta para escribir…"
+                                lastReason = null
+                                waiting = true
+
+                                registerResultHandler { result ->
+                                    waiting = false
+                                    status = if (result.success) "¡Escritura completada!" else "No se pudo escribir."
+                                    lastReason = result.reason
+                                }
+
+                                onStartListening(messageToWrite) { }
+                            }
+                        ) { Text("Listo") }
+
+                        TextButton(
+                            enabled = waiting,
+                            onClick = {
+                                onStopListening()
+                                waiting = false
+                                status = "Escritura cancelada."
+                            }
+                        ) { Text("Cancelar") }
+                    }
+
+                    if (type == PayloadType.CALL) {
+                        OutlinedButton(onClick = { if (!waiting) pickFromContacts() }) {
+                            Icon(Icons.Filled.Person, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Elegir de contactos")
+                        }
+                    }
+
+                    AnimatedVisibility(visible = waiting) {
+                        StatusBanner(text = "Acerca la etiqueta al móvil")
+                    }
+
+                    lastReason?.let {
+                        ProvideTextStyle(MaterialTheme.typography.bodySmall) {
+                            Text("Detalle: $it")
+                        }
+                    }
+
+                    status?.let { msg ->
+                        val success = msg.startsWith("")
+                        val icon = if (success) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline
+                        val tint = if (success) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        AssistChip(
+                            onClick = { /* no-op */ },
+                            label = { Text(msg.removePrefix("").removePrefix("")) },
+                            leadingIcon = {
+                                Icon(icon, contentDescription = null, tint = tint)
                             }
                         )
-                    },
-                    isError = error != null,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Text(
-                    "Tamaño del mensaje: $estimatedBytes B (límite aprox. 106 B)",
-                    style = MaterialTheme.typography.bodySmall
-                )
-
-                // Botón extra: Elegir de contactos (solo en modo Llamar)
-                if (type == PayloadType.CALL) {
-                    OutlinedButton(onClick = {
-                        if (!waiting) pickFromContacts()
-                    }) {
-                        Text("Elegir de contactos")
                     }
                 }
-
-                if (error != null) {
-                    Text(error!!, color = MaterialTheme.colorScheme.error)
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Button(
-                        enabled = nfcAvailable && !waiting,
-                        onClick = {
-                            val validation = validateInput(type, input.text)
-                            if (validation != null) { error = validation; return@Button }
-
-                            status = "Acerca una etiqueta para escribir…"
-                            lastReason = null
-                            waiting = true
-
-                            // 1) Registramos el handler que la Activity invocará al escribir
-                            registerResultHandler { result ->
-                                waiting = false
-                                status = if (result.success) "✅ ¡Escritura completada!" else "❌ No se pudo escribir."
-                                lastReason = result.reason
-                            }
-
-                            // 2) Activamos el modo escucha/escritura
-                            onStartListening(messageToWrite) { /* ignorado */ }
-                        }
-                    ) { Text("Listo") }
-
-                    OutlinedButton(
-                        enabled = waiting,
-                        onClick = {
-                            onStopListening()
-                            waiting = false
-                            status = "Escritura cancelada."
-                        }
-                    ) { Text("Cancelar") }
-                }
-
-                lastReason?.let {
-                    Text("Detalle: $it", style = MaterialTheme.typography.bodySmall)
-                }
-
-                if (waiting) AssistCard()
-                status?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
             }
+
+            Spacer(Modifier.height(24.dp))
+
+            // Pie con mini ayuda
+            HelpStrip()
+
+            Spacer(Modifier.height(12.dp))
         }
     }
 }
@@ -329,19 +370,78 @@ fun NfcRewriteScreen(
 /** =========== Helpers UI =========== */
 
 @Composable
-private fun SegmentedButtons(type: PayloadType, onTypeChange: (PayloadType) -> Unit) {
-    SingleChoiceSegmentedButtonRow {
-        SegmentedButton(
-            selected = type == PayloadType.CALL,
-            onClick = { onTypeChange(PayloadType.CALL) },
-            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-        ) { Text("Llamar") }
+private fun PayloadSelector(selected: PayloadType, onSelect: (PayloadType) -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(
+            selected = selected == PayloadType.CALL,
+            onClick = { onSelect(PayloadType.CALL) },
+            label = { Text("Llamar") },
+            leadingIcon = { Icon(Icons.Filled.Phone, contentDescription = null) }
+        )
+        FilterChip(
+            selected = selected == PayloadType.URL,
+            onClick = { onSelect(PayloadType.URL) },
+            label = { Text("URL") },
+            leadingIcon = { Icon(Icons.Filled.Link, contentDescription = null) }
+        )
+    }
+}
 
-        SegmentedButton(
-            selected = type == PayloadType.URL,
-            onClick = { onTypeChange(PayloadType.URL) },
-            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-        ) { Text("URL") }
+@Composable
+private fun StatChip(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
+    AssistChip(
+        onClick = { },
+        label = { Text(label) },
+        leadingIcon = { Icon(icon, contentDescription = null) }
+    )
+}
+
+@Composable
+private fun StatusBanner(text: String) {
+    val infinite = rememberInfiniteTransition(label = "pulse")
+    val alpha by infinite.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "alpha"
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.large)
+            .background(
+                Brush.horizontalGradient(
+                    listOf(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.06f)
+                    )
+                )
+            )
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(22.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+        ) {
+            // Punto "parpadeante"
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary)
+                    .alpha(alpha)
+            )
+        }
+        Text(text)
     }
 }
 
@@ -352,7 +452,8 @@ private fun WarningCard(
     ElevatedCard(
         colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.errorContainer
-        )
+        ),
+        modifier = Modifier.fillMaxWidth()
     ) {
         Text(
             text = stringResource(messageRes),
@@ -363,20 +464,25 @@ private fun WarningCard(
 }
 
 @Composable
-private fun AssistCard(
-    @StringRes messageRes: Int = R.string.assist_default
-) {
-    ElevatedCard {
-        Text(
-            text = stringResource(messageRes),
-            modifier = Modifier.padding(16.dp)
-        )
+private fun HelpStrip() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.large)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(Icons.Filled.SdCard, contentDescription = null)
+        ProvideTextStyle(MaterialTheme.typography.bodySmall) {
+            Text("Consejo: mantén el móvil firme sobre la etiqueta durante 1–2 segundos.")
+        }
     }
 }
 
 /** =========== Construcción del NDEF =========== */
 
-/** =========== Construcción del NDEF =========== */
 private fun buildMessage(type: PayloadType, rawInput: String): NdefMessage {
     val record: NdefRecord = when (type) {
         PayloadType.CALL -> {
@@ -388,12 +494,9 @@ private fun buildMessage(type: PayloadType, rawInput: String): NdefMessage {
             NdefRecord.createUri(url)
         }
     }
-    // Un único record para minimizar tamaño (no AAR, ni texto extra)
     return NdefMessage(arrayOf(record))
 }
 
-
-/** Validaciones rápidas */
 private fun validateInput(type: PayloadType, input: String): String? {
     return when (type) {
         PayloadType.CALL -> {
@@ -420,6 +523,7 @@ private fun ensureUrlScheme(input: String): String {
 }
 
 /** Escritura al tag con motivo */
+
 data class WriteResult(
     val success: Boolean,
     val reason: String? = null
