@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.TextFieldValue
@@ -131,13 +132,15 @@ fun NfcRewriteScreen(
     registerResultHandler: ((WriteResult) -> Unit) -> Unit
 ) {
     val context = LocalContext.current
+    val brand = Color(0xFF0E2138)
 
     var type by remember { mutableStateOf(PayloadType.CALL) }
     var input by remember { mutableStateOf(TextFieldValue("")) }
     var waiting by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
     var lastReason by remember { mutableStateOf<String?>(null) }
+    var lastSuccess by remember { mutableStateOf<Boolean?>(null) } // <- para icono/tinte correcto
+    var error by remember { mutableStateOf<String?>(null) }
 
     // --- Picker de contactos + permiso ---
     var pendingPick by remember { mutableStateOf(false) }
@@ -196,20 +199,28 @@ fun NfcRewriteScreen(
         mutableStateOf(buildMessage(type, input.text))
     }
 
-    val estimatedBytes = remember(messageToWrite) { messageToWrite.toByteArray().size }
-
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
     Scaffold(
+        containerColor = Color.White,
         topBar = {
+            // App bar blanca, acento de marca, y SIN el chip de bytes
             LargeTopAppBar(
                 title = {
                     Column(Modifier.fillMaxWidth()) {
-                        Text("Reescribir NFC", maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            text = if (nfcAvailable) "Prepara y escribe una etiqueta" else stringResource(R.string.nfc_not_available),
+                            "Reescribir NFC",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = brand
+                        )
+                        Text(
+                            text = if (nfcAvailable) "Prepara y escribe una etiqueta" else stringResource(
+                                R.string.nfc_not_available
+                            ),
                             style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.alpha(0.85f)
+                            modifier = Modifier.alpha(0.9f),
+                            color = brand.copy(alpha = 0.75f)
                         )
                     }
                 },
@@ -217,14 +228,18 @@ fun NfcRewriteScreen(
                     IconButton(onClick = {
                         if (waiting) onStopListening()
                         onBack()
-                    }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver") }
-                },
-                actions = {
-                    StatChip(icon = Icons.Filled.SdCard, label = "${estimatedBytes} B")
+                    }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Volver",
+                            tint = brand
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.largeTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    containerColor = Color.White,
+                    titleContentColor = brand,
+                    navigationIconContentColor = brand
                 ),
                 scrollBehavior = scrollBehavior
             )
@@ -235,132 +250,152 @@ fun NfcRewriteScreen(
                 .fillMaxSize()
                 .padding(inner)
                 .systemBarsPadding()
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Spacer(Modifier.height(8.dp))
-
             if (!nfcAvailable) WarningCard()
 
-            // Tarjeta principal
-            ElevatedCard(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.elevatedCardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
+            // Panel tintado para dar “caja” al flujo (como Read Now)
+            Surface(
+                color = brand.copy(alpha = 0.08f),
+                shape = MaterialTheme.shapes.large,
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Selector con iconos
-                    PayloadSelector(
-                        selected = type,
-                        onSelect = { type = it; error = null; status = null }
-                    )
-
-                    Crossfade(targetState = type, label = "field") { current ->
-                        when (current) {
-                            PayloadType.CALL -> OutlinedTextField(
-                                value = input,
-                                onValueChange = { input = it; error = null },
-                                leadingIcon = { Icon(Icons.Filled.Phone, contentDescription = null) },
-                                label = { Text("Número a llamar (p.ej. +34911222333)") },
-                                placeholder = { Text("+34…") },
-                                isError = error != null,
-                                supportingText = {
-                                    AnimatedVisibility(visible = error != null) {
-                                        Text(text = error ?: "", color = MaterialTheme.colorScheme.error)
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth()
+                    // Tarjeta principal blanca
+                    ElevatedCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
+                        shape = MaterialTheme.shapes.extraLarge
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            // Selector con iconos
+                            PayloadSelector(
+                                selected = type,
+                                onSelect = { type = it; error = null; status = null; lastSuccess = null; lastReason = null }
                             )
-                            PayloadType.URL -> OutlinedTextField(
-                                value = input,
-                                onValueChange = { input = it; error = null },
-                                leadingIcon = { Icon(Icons.Filled.Link, contentDescription = null) },
-                                label = { Text("URL (p.ej. https://miweb.com)") },
-                                placeholder = { Text("https://…") },
-                                isError = error != null,
-                                supportingText = {
-                                    AnimatedVisibility(visible = error != null) {
-                                        Text(text = error ?: "", color = MaterialTheme.colorScheme.error)
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
 
-                    // Acciones
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(
-                            modifier = Modifier.weight(1f),
-                            enabled = nfcAvailable && !waiting,
-                            onClick = {
-                                val validation = validateInput(type, input.text)
-                                if (validation != null) { error = validation; return@Button }
+                            Crossfade(targetState = type, label = "field") { current ->
+                                when (current) {
+                                    PayloadType.CALL -> OutlinedTextField(
+                                        value = input,
+                                        onValueChange = { input = it; error = null },
+                                        leadingIcon = { Icon(Icons.Filled.Phone, contentDescription = null, tint = brand) },
+                                        label = { Text("Número a llamar (p.ej. +34911222333)") },
+                                        placeholder = { Text("+34…") },
+                                        isError = error != null,
+                                        supportingText = {
+                                            AnimatedVisibility(visible = error != null) {
+                                                Text(text = error ?: "", color = MaterialTheme.colorScheme.error)
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
 
-                                status = "Acerca una etiqueta para escribir…"
-                                lastReason = null
-                                waiting = true
-
-                                registerResultHandler { result ->
-                                    waiting = false
-                                    status = if (result.success) "¡Escritura completada!" else "No se pudo escribir."
-                                    lastReason = result.reason
+                                    PayloadType.URL -> OutlinedTextField(
+                                        value = input,
+                                        onValueChange = { input = it; error = null },
+                                        leadingIcon = { Icon(Icons.Filled.Link, contentDescription = null, tint = brand) },
+                                        label = { Text("URL (p.ej. https://miweb.com)") },
+                                        placeholder = { Text("https://…") },
+                                        isError = error != null,
+                                        supportingText = {
+                                            AnimatedVisibility(visible = error != null) {
+                                                Text(text = error ?: "", color = MaterialTheme.colorScheme.error)
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
                                 }
-
-                                onStartListening(messageToWrite) { }
                             }
-                        ) { Text("Listo") }
 
-                        TextButton(
-                            enabled = waiting,
-                            onClick = {
-                                onStopListening()
-                                waiting = false
-                                status = "Escritura cancelada."
+                            // Acciones
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Button(
+                                    modifier = Modifier.weight(1f),
+                                    enabled = nfcAvailable && !waiting,
+                                    onClick = {
+                                        val validation = validateInput(type, input.text)
+                                        if (validation != null) {
+                                            error = validation; return@Button
+                                        }
+
+                                        status = "Acerca una etiqueta para escribir…"
+                                        lastReason = null
+                                        lastSuccess = null
+                                        waiting = true
+
+                                        registerResultHandler { result ->
+                                            waiting = false
+                                            lastSuccess = result.success
+                                            status = if (result.success) "¡Escritura completada!" else "No se pudo escribir."
+                                            lastReason = result.reason
+                                        }
+
+                                        onStartListening(messageToWrite) { }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = brand,
+                                        contentColor = Color.White
+                                    )
+                                ) { Text("Listo") }
+
+                                TextButton(
+                                    enabled = waiting,
+                                    onClick = {
+                                        onStopListening()
+                                        waiting = false
+                                        status = "Escritura cancelada."
+                                        lastSuccess = null
+                                    }
+                                ) { Text("Cancelar") }
                             }
-                        ) { Text("Cancelar") }
-                    }
 
-                    if (type == PayloadType.CALL) {
-                        OutlinedButton(onClick = { if (!waiting) pickFromContacts() }) {
-                            Icon(Icons.Filled.Person, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Elegir de contactos")
+                            if (type == PayloadType.CALL) {
+                                OutlinedButton(onClick = { if (!waiting) pickFromContacts() }) {
+                                    Icon(Icons.Filled.Person, contentDescription = null, tint = brand)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Elegir de contactos")
+                                }
+                            }
+
+                            AnimatedVisibility(visible = waiting) {
+                                StatusBanner(text = "Acerca la etiqueta al móvil", brand = brand)
+                            }
+
+                            lastReason?.let {
+                                ProvideTextStyle(MaterialTheme.typography.bodySmall) {
+                                    Text("Detalle: $it")
+                                }
+                            }
+
+                            status?.let { msg ->
+                                val success = lastSuccess == true
+                                val icon = if (success) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline
+                                val tint = if (success) brand else MaterialTheme.colorScheme.error
+                                AssistChip(
+                                    onClick = { /* no-op */ },
+                                    label = { Text(msg) },
+                                    leadingIcon = { Icon(icon, contentDescription = null, tint = tint) },
+                                    colors = AssistChipDefaults.assistChipColors(
+                                        containerColor = if (success) brand.copy(alpha = 0.10f) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f),
+                                        labelColor = if (success) brand else MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                )
+                            }
                         }
                     }
 
-                    AnimatedVisibility(visible = waiting) {
-                        StatusBanner(text = "Acerca la etiqueta al móvil")
-                    }
-
-                    lastReason?.let {
-                        ProvideTextStyle(MaterialTheme.typography.bodySmall) {
-                            Text("Detalle: $it")
-                        }
-                    }
-
-                    status?.let { msg ->
-                        val success = msg.startsWith("")
-                        val icon = if (success) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline
-                        val tint = if (success) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                        AssistChip(
-                            onClick = { /* no-op */ },
-                            label = { Text(msg.removePrefix("").removePrefix("")) },
-                            leadingIcon = {
-                                Icon(icon, contentDescription = null, tint = tint)
-                            }
-                        )
-                    }
+                    // Tira de ayuda
+                    HelpStrip()
                 }
             }
-
-            Spacer(Modifier.height(24.dp))
-
-            // Pie con mini ayuda
-            HelpStrip()
 
             Spacer(Modifier.height(12.dp))
         }
@@ -388,19 +423,10 @@ private fun PayloadSelector(selected: PayloadType, onSelect: (PayloadType) -> Un
 }
 
 @Composable
-private fun StatChip(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
-    AssistChip(
-        onClick = { },
-        label = { Text(label) },
-        leadingIcon = { Icon(icon, contentDescription = null) }
-    )
-}
-
-@Composable
-private fun StatusBanner(text: String) {
+private fun StatusBanner(text: String, brand: Color) {
     val infinite = rememberInfiniteTransition(label = "pulse")
     val alpha by infinite.animateFloat(
-        initialValue = 0.4f,
+        initialValue = 0.55f,   // un poco más visible
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(1000, easing = LinearEasing),
@@ -416,8 +442,8 @@ private fun StatusBanner(text: String) {
             .background(
                 Brush.horizontalGradient(
                     listOf(
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.06f)
+                        brand.copy(alpha = 0.18f),
+                        brand.copy(alpha = 0.10f)
                     )
                 )
             )
@@ -429,7 +455,7 @@ private fun StatusBanner(text: String) {
             modifier = Modifier
                 .size(22.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                .background(brand.copy(alpha = 0.22f))
         ) {
             // Punto "parpadeante"
             Box(
@@ -437,11 +463,11 @@ private fun StatusBanner(text: String) {
                     .align(Alignment.Center)
                     .size(10.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
+                    .background(brand)
                     .alpha(alpha)
             )
         }
-        Text(text)
+        Text(text, color = Color(0xFF0E2138))
     }
 }
 
@@ -501,7 +527,7 @@ private fun validateInput(type: PayloadType, input: String): String? {
     return when (type) {
         PayloadType.CALL -> {
             val tel = normalizePhone(input)
-            if (tel.isEmpty()) "Introduce un número válido (ej.: +34911222333)" else null
+            if (tel.isEmpty()) "Introduce un número válido (ej.: +34911222333)"; else null
         }
         PayloadType.URL -> {
             val url = ensureUrlScheme(input)
