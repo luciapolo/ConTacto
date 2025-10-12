@@ -108,7 +108,8 @@ private data class QuickLink(val label: String, val url: String)
 
 // Edita esta lista a tu gusto
 private val defaultQuickLinks = listOf(
-    QuickLink("SESCAM", "https://sescam.jccm.es/misaluddigital/app/inicio")
+    QuickLink("SESCAM", "https://sescam.jccm.es/misaluddigital/app/inicio"),
+    QuickLink("Rural Vía", "https://bancadigital.ruralvia.com/CA-FRONT/NBE/web/particulares/#/login")
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
