@@ -13,17 +13,16 @@ import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import com.example.contacto.web.SescamGuideActivity
+import com.example.contacto.web.BankGuideActivity
 
 class NfcRouterActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         try {
             handleIntent(intent)
         } finally {
-            // Esta activity no muestra UI
-            finish()
+            finish() // Esta activity no muestra UI
         }
     }
 
@@ -37,14 +36,14 @@ class NfcRouterActivity : Activity() {
     }
 
     private fun handleIntent(intent: Intent) {
-        // 1) Primero intent.data (muchas veces viene ya la URI en ACTION_NDEF_DISCOVERED/VIEW)
+        // 1) Primero intent.data (a veces viene ya la URI en ACTION_NDEF_DISCOVERED/VIEW)
         val dataUri = intent.data
         if (dataUri != null) {
             routeByUrl(dataUri.toString())
             return
         }
 
-        // 2) Si no hay data, intentamos leer el Tag (por si el sistema no puso la URI)
+        // 2) Si no hay data, intentamos leer el Tag
         val tag: Tag? = if (Build.VERSION.SDK_INT >= 33)
             intent.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag::class.java)
         else
@@ -61,22 +60,33 @@ class NfcRouterActivity : Activity() {
     }
 
     private fun routeByUrl(url: String) {
-        if (isSescamUrl(url)) {
-            // Lanza la guía interna con la URL del SESCAM
-            startActivity(
-                Intent(this, SescamGuideActivity::class.java)
-                    .putExtra("url", url)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-        } else {
-            // Si no es SESCAM, abre en navegador (comportamiento por omisión)
-            try {
+        when {
+            isSescamUrl(url) -> {
+                // Lanza guía SESCAM
                 startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                    Intent(this, SescamGuideActivity::class.java)
+                        .putExtra(SescamGuideActivity.EXTRA_START_URL, url) // usa EXTRA propio si lo tienes
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
-            } catch (_: ActivityNotFoundException) {
-                Toast.makeText(this, "No se pudo abrir el navegador.", Toast.LENGTH_SHORT).show()
+            }
+            isRuralviaUrl(url) -> {
+                // Lanza guía Banco (Ruralvía particulares /#/login)
+                startActivity(
+                    Intent(this, BankGuideActivity::class.java)
+                        .putExtra(BankGuideActivity.EXTRA_START_URL, url)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+            else -> {
+                // No coincide: abre en navegador
+                try {
+                    startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                } catch (_: ActivityNotFoundException) {
+                    Toast.makeText(this, "No se pudo abrir el navegador.", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -108,7 +118,16 @@ class NfcRouterActivity : Activity() {
         host.contains("sescam.jccm.es") ||
                 host.contains("sescam.castillalamancha.es") ||
                 path.contains("/misaluddigital")
-    } catch (_: Throwable) {
-        false
-    }
+    } catch (_: Throwable) { false }
+
+    private fun isRuralviaUrl(url: String): Boolean = try {
+        val u = Uri.parse(url)
+        val host = (u.host ?: "").lowercase()
+        val path = (u.path ?: "").lowercase()
+        val frag = (u.fragment ?: "").lowercase()
+        // Coincide con https://bancadigital.ruralvia.com/CA-FRONT/NBE/web/particulares/#/login
+        host == "bancadigital.ruralvia.com" &&
+                path.startsWith("/ca-front/nbe/web/particulares") &&
+                frag.contains("/login")
+    } catch (_: Throwable) { false }
 }

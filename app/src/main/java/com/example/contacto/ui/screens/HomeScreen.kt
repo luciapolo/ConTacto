@@ -12,11 +12,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.contacto.R
@@ -27,7 +31,7 @@ import java.util.Calendar
 fun HomeScreen(
     userName: String? = null,
     onRewriteNfcClick: () -> Unit,
-    onOpenSescamGuide: () -> Unit,
+    onOpenNfcReader: () -> Unit,
     onReadNowClick: () -> Unit,
     onOpenSettingsClick: () -> Unit
 ) {
@@ -39,14 +43,20 @@ fun HomeScreen(
     }
 
     Scaffold(
+        containerColor = Color.White, // Fondo blanco global
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("ConTacto") },
+                title = { BrandTitle() },
                 actions = {
                     IconButton(onClick = onOpenSettingsClick) {
                         Icon(imageVector = Icons.Filled.Settings, contentDescription = "Ajustes")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = Color.White,
+                    titleContentColor = Color(0xFF0E2138), // azul del logotipo
+                    actionIconContentColor = Color(0xFF0E2138)
+                )
             )
         }
     ) { innerPadding ->
@@ -89,7 +99,9 @@ fun HomeScreen(
 
                 Button(
                     onClick = onReadNowClick,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
                     shape = MaterialTheme.shapes.extraLarge
                 ) {
                     Icon(Icons.Outlined.Contactless, contentDescription = null)
@@ -99,35 +111,40 @@ fun HomeScreen(
 
                 Button(
                     onClick = onRewriteNfcClick,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
                     shape = MaterialTheme.shapes.extraLarge
                 ) {
                     Icon(Icons.Outlined.Contactless, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.cta_rewrite_nfc))
                 }
-
-                Button(
-                    onClick = onOpenSescamGuide,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    shape = MaterialTheme.shapes.extraLarge
-                ) {
-                    Icon(Icons.Outlined.Public, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Guía SESCAM (en la app)")
-                }
             }
         }
     }
 }
 
-@Preview(showBackground = true)
+@Composable
+private fun BrandTitle() {
+    // Si tienes un recurso de la palabra como imagen, reemplaza por Image(painterResource(R.drawable.logo_contacto_wordmark), ...)
+    val brandColor = Color(0xFF0E2138)
+    Text(
+        text = buildAnnotatedString {
+            withStyle(SpanStyle(color = brandColor, fontWeight = FontWeight.SemiBold)) { append("Con") }
+            withStyle(SpanStyle(color = brandColor, fontWeight = FontWeight.ExtraBold)) { append("Tacto") }
+        },
+        style = MaterialTheme.typography.titleLarge
+    )
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFFFFFFF)
 @Composable
 private fun HomeScreenPreview() {
     MaterialTheme {
         HomeScreen(
             onRewriteNfcClick = {},
-            onOpenSescamGuide = {},
+            onOpenNfcReader = {},
             onReadNowClick = {},
             onOpenSettingsClick = {}
         )

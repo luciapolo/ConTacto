@@ -15,9 +15,6 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import com.example.contacto.nfc.NfcRewriteActivity
-import com.example.contacto.web.SescamGuideActivity // <- agente en WebView (opcional)
-import com.example.contacto.nfc.NfcReadNowActivity
 import com.example.contacto.data.SettingsActivity
 import com.example.contacto.nfc.NfcReadNowActivity
 import com.example.contacto.nfc.NfcReaderActivity
@@ -25,6 +22,8 @@ import com.example.contacto.nfc.NfcRewriteActivity
 import com.example.contacto.ui.screens.HomeScreen
 import com.example.contacto.ui.theme.ConTactoTheme
 import com.example.contacto.web.SescamGuideActivity
+import com.example.contacto.web.BankGuideActivity
+
 
 class MainActivity : ComponentActivity() {
 
@@ -67,9 +66,16 @@ class MainActivity : ComponentActivity() {
                     onRewriteNfcClick = {
                         startActivity(Intent(this, NfcRewriteActivity::class.java))
                     },
-
-                    onReadNowClick = {startActivity(Intent(this,NfcReadNowActivity::class.java))},
-                    onOpenSettingsClick = {startActivity(Intent(this, SettingsActivity::class.java))}
+                    // Lector NFC “clásico” con overlay + navegador (lo mantengo por si lo quieres usar)
+                    onOpenNfcReader = {
+                        startActivity(Intent(this, NfcReaderActivity::class.java))
+                    },
+                    onReadNowClick = {
+                        startActivity(Intent(this, NfcReadNowActivity::class.java))
+                    },
+                    onOpenSettingsClick = {
+                        startActivity(Intent(this, SettingsActivity::class.java))
+                    }
                 )
             }
         }
@@ -89,24 +95,47 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         nfcAdapter?.disableForegroundDispatch(this)
-
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        // Si más adelante manejas intents (deep links / NFC a Main), hazlo aquí.
-        // Si llega un tag mientras esta pantalla está en primer plano, lo procesamos o lo delegamos:
+
+        // Llega un TAG en primer plano: lo intentamos leer
         val tag: Tag? = if (Build.VERSION.SDK_INT >= 33)
             intent.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag::class.java)
         else
             @Suppress("DEPRECATION") intent.getParcelableExtra(NfcAdapter.EXTRA_TAG)
 
         if (tag != null) {
-            startActivity(
-                Intent(this, com.example.contacto.nfc.NfcReaderActivity::class.java).apply {
-                    putExtra(NfcAdapter.EXTRA_TAG, tag)
+            // 1) Intentamos extraer una URL desde NDEF
+            val url = runCatching { readUrlFromTag(tag) }.getOrNull()
+
+            if (!url.isNullOrBlank()) {
+                when {
+                    isSescamUrl(url) -> {
+                        startActivity(
+                            Intent(this, SescamGuideActivity::class.java)
+                                .putExtra(SescamGuideActivity.EXTRA_START_URL, url)
+                        )
+                    }
+                    isRuralviaUrl(url) -> {
+                        startActivity(
+                            Intent(this, BankGuideActivity::class.java)
+                                .putExtra(BankGuideActivity.EXTRA_START_URL, url)
+                        )
+                    }
+                    else -> {
+                        openInBrowser(url)
+                    }
                 }
-            )
+            } else {
+                // 3) Si no contiene URL legible, delega a tu lector existente (no se pierde funcionalidad)
+                startActivity(
+                    Intent(this, NfcReaderActivity::class.java).apply {
+                        putExtra(NfcAdapter.EXTRA_TAG, tag)
+                    }
+                )
+            }
         }
     }
 
@@ -150,6 +179,22 @@ class MainActivity : ComponentActivity() {
             false
         }
     }
+
+    private fun isRuralviaUrl(url: String): Boolean {
+        return try {
+            val u = Uri.parse(url)
+            val host = (u.host ?: "").lowercase()
+            val path = (u.path ?: "").lowercase()
+            val frag = (u.fragment ?: "").lowercase()
+
+            host == "bancadigital.ruralvia.com" &&
+                    path.contains("/ca-front/nbe/web/particulares") &&
+                    frag.contains("/login")
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
 
     private fun openInBrowser(url: String) {
         try {
