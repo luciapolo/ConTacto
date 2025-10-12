@@ -14,34 +14,60 @@ import android.provider.ContactsContract
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.SdCard
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import com.example.contacto.ui.theme.ConTactoTheme
-
-// Icons
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import com.example.contacto.R
 
 class NfcRewriteActivity : ComponentActivity() {
 
     private var nfcAdapter: NfcAdapter? = null
 
-    // Handler que la UI registrará para recibir el resultado detallado
     private var onWriteResult: ((WriteResult) -> Unit)? = null
 
     private val readerCallback = NfcAdapter.ReaderCallback { tag ->
-        pendingMessage?.let { msg ->
-            val result = writeNdefToTagWithReason(tag, msg)
-            onWriteResult?.invoke(result)
+        val msg = pendingMessage
+        val result: WriteResult = if (msg != null) {
+            writeNdefToTagWithReason(tag, msg)
+        } else {
+            WriteResult(false, "No hay mensaje preparado.")
         }
+        onWriteResult?.invoke(result)
     }
 
     private var pendingMessage: NdefMessage? = null
@@ -55,8 +81,7 @@ class NfcRewriteActivity : ComponentActivity() {
                 NfcRewriteScreen(
                     onBack = { finish() },
                     nfcAvailable = nfcAdapter != null,
-                    // La UI me dice qué mensaje escribir y yo activo el ReaderMode
-                    onStartListening = { message, _ /* ignoramos el boolean callback */ ->
+                    onStartListening = { message, _ ->
                         pendingMessage = message
                         enableReaderMode()
                     },
@@ -64,7 +89,6 @@ class NfcRewriteActivity : ComponentActivity() {
                         disableReaderMode()
                         pendingMessage = null
                     },
-                    // La UI registra aquí su handler para recibir el resultado
                     registerResultHandler = { handler ->
                         onWriteResult = handler
                     }
@@ -86,7 +110,6 @@ class NfcRewriteActivity : ComponentActivity() {
                     NfcAdapter.FLAG_READER_NFC_B or
                     NfcAdapter.FLAG_READER_NFC_F or
                     NfcAdapter.FLAG_READER_NFC_V or
-                    NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK or
                     NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS,
             null
         )
@@ -108,17 +131,18 @@ fun NfcRewriteScreen(
     nfcAvailable: Boolean,
     onStartListening: (NdefMessage, (Boolean) -> Unit) -> Unit,
     onStopListening: () -> Unit,
-    // NUEVO: en vez de onWriteResult (callback directo), registramos el handler
     registerResultHandler: ((WriteResult) -> Unit) -> Unit
-){
+) {
     val context = LocalContext.current
+    val brand = Color(0xFF0E2138)
 
     var type by remember { mutableStateOf(PayloadType.CALL) }
     var input by remember { mutableStateOf(TextFieldValue("")) }
     var waiting by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
     var lastReason by remember { mutableStateOf<String?>(null) }
+    var lastSuccess by remember { mutableStateOf<Boolean?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
 
     // --- Picker de contactos + permiso ---
     var pendingPick by remember { mutableStateOf(false) }
@@ -173,123 +197,221 @@ fun NfcRewriteScreen(
     }
     // --- Fin picker de contactos ---
 
-    // Construye el mensaje según el tipo elegido
     val messageToWrite by remember(type, input) {
         mutableStateOf(buildMessage(type, input.text))
     }
 
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
     Scaffold(
+        containerColor = Color.White,
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("Reescribir NFC") },
+            LargeTopAppBar(
+                title = {
+                    Column(Modifier.fillMaxWidth()) {
+                        Text(
+                            "Reescribir NFC",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = brand
+                        )
+                        Text(
+                            text = if (nfcAvailable) "Prepara y escribe una etiqueta" else stringResource(
+                                R.string.nfc_not_available
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.alpha(0.9f),
+                            color = brand.copy(alpha = 0.75f)
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = {
                         if (waiting) onStopListening()
                         onBack()
                     }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Volver",
+                            tint = brand
+                        )
                     }
-                }
+                },
+                colors = TopAppBarDefaults.largeTopAppBarColors(
+                    containerColor = Color.White,
+                    titleContentColor = brand,
+                    navigationIconContentColor = brand
+                ),
+                scrollBehavior = scrollBehavior
             )
         }
     ) { inner ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(inner)
+                .systemBarsPadding()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+            if (!nfcAvailable) WarningCard()
+
+            // Panel tintado
+            Surface(
+                color = brand.copy(alpha = 0.08f),
+                shape = MaterialTheme.shapes.large,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                if (!nfcAvailable) WarningCard("Este dispositivo no tiene NFC o está desactivado.")
-
-                // Selector de tipo
-                SegmentedButtons(
-                    type = type,
-                    onTypeChange = { type = it; error = null; status = null }
-                )
-
-                // Campo según tipo
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { input = it; error = null },
-                    label = {
-                        Text(
-                            when (type) {
-                                PayloadType.CALL -> "Número a llamar (p.ej. +34911222333)"
-                                PayloadType.URL -> "URL (p.ej. https://miweb.com)"
-                            }
-                        )
-                    },
-                    supportingText = {
-                        if (type == PayloadType.CALL)
-                            Text("Se abrirá el marcador con el número (no llama automáticamente).")
-                        else
-                            Text("Se abrirá el navegador en esa página.")
-                    },
-                    isError = error != null,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // Botón extra: Elegir de contactos (solo en modo Llamar)
-                if (type == PayloadType.CALL) {
-                    OutlinedButton(onClick = {
-                        if (!waiting) pickFromContacts()
-                    }) {
-                        Text("Elegir de contactos")
-                    }
-                }
-
-                if (error != null) {
-                    Text(error!!, color = MaterialTheme.colorScheme.error)
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Button(
-                        enabled = nfcAvailable && !waiting,
-                        onClick = {
-                            val validation = validateInput(type, input.text)
-                            if (validation != null) { error = validation; return@Button }
+                    // Tarjeta principal
+                    ElevatedCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
+                        shape = MaterialTheme.shapes.extraLarge
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            // Selector con iconos
+                            PayloadSelector(
+                                selected = type,
+                                onSelect = { type = it; error = null; status = null; lastSuccess = null; lastReason = null }
+                            )
 
-                            status = "Acerca una etiqueta para escribir…"
-                            lastReason = null
-                            waiting = true
-
-                            // 1) Registramos el handler que la Activity invocará al escribir
-                            registerResultHandler { result ->
-                                waiting = false
-                                status = if (result.success) "✅ ¡Escritura completada!" else "❌ No se pudo escribir."
-                                lastReason = result.reason
+                            Crossfade(targetState = type, label = "field") { current ->
+                                when (current) {
+                                    PayloadType.CALL -> OutlinedTextField(
+                                        value = input,
+                                        onValueChange = { input = it; error = null },
+                                        leadingIcon = { Icon(Icons.Filled.Phone, contentDescription = null, tint = brand) },
+                                        label = { Text("Número a llamar (p.ej. +34911222333)") },
+                                        placeholder = { Text("+34…") },
+                                        isError = error != null,
+                                        supportingText = {
+                                            AnimatedVisibility(visible = error != null) {
+                                                Text(text = error ?: "", color = MaterialTheme.colorScheme.error)
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    PayloadType.URL -> OutlinedTextField(
+                                        value = input,
+                                        onValueChange = { input = it; error = null },
+                                        leadingIcon = { Icon(Icons.Filled.Link, contentDescription = null, tint = brand) },
+                                        label = { Text("URL (p.ej. https://miweb.com)") },
+                                        placeholder = { Text("https://…") },
+                                        isError = error != null,
+                                        supportingText = {
+                                            AnimatedVisibility(visible = error != null) {
+                                                Text(text = error ?: "", color = MaterialTheme.colorScheme.error)
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
                             }
 
-                            // 2) Activamos el modo escucha/escritura
-                            onStartListening(messageToWrite) { /* ignorado */ }
+                            // --- Accesos rápidos SOLO para URL ---
+                            if (type == PayloadType.URL) {
+                                QuickLinks(
+                                    brand = brand,
+                                    onPick = { url ->
+                                        type = PayloadType.URL
+                                        input = TextFieldValue(url)
+                                        error = null
+                                    }
+                                )
+                            }
+// --- FIN Accesos rápidos ---
+
+
+                            // Acciones
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Button(
+                                    modifier = Modifier.weight(1f),
+                                    enabled = nfcAvailable && !waiting,
+                                    onClick = {
+                                        val validation = validateInput(type, input.text)
+                                        if (validation != null) {
+                                            error = validation; return@Button
+                                        }
+
+                                        status = "Acerca una etiqueta para escribir…"
+                                        lastReason = null
+                                        lastSuccess = null
+                                        waiting = true
+
+                                        registerResultHandler { result ->
+                                            waiting = false
+                                            lastSuccess = result.success
+                                            status = if (result.success) "¡Escritura completada!" else "No se pudo escribir."
+                                            lastReason = result.reason
+                                        }
+
+                                        onStartListening(messageToWrite) { }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = brand,
+                                        contentColor = Color.White
+                                    )
+                                ) { Text("Listo") }
+
+                                TextButton(
+                                    enabled = waiting,
+                                    onClick = {
+                                        onStopListening()
+                                        waiting = false
+                                        status = "Escritura cancelada."
+                                        lastSuccess = null
+                                    }
+                                ) { Text("Cancelar") }
+                            }
+
+                            if (type == PayloadType.CALL) {
+                                OutlinedButton(onClick = { if (!waiting) pickFromContacts() }) {
+                                    Icon(Icons.Filled.Person, contentDescription = null, tint = brand)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Elegir de contactos")
+                                }
+                            }
+
+                            AnimatedVisibility(visible = waiting) {
+                                StatusBanner(text = "Acerca la etiqueta al móvil", brand = brand)
+                            }
+
+                            lastReason?.let {
+                                ProvideTextStyle(MaterialTheme.typography.bodySmall) {
+                                    Text("Detalle: $it")
+                                }
+                            }
+
+                            status?.let { msg ->
+                                val success = lastSuccess == true
+                                val icon = if (success) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline
+                                val tint = if (success) brand else MaterialTheme.colorScheme.error
+                                AssistChip(
+                                    onClick = { /* no-op */ },
+                                    label = { Text(msg) },
+                                    leadingIcon = { Icon(icon, contentDescription = null, tint = tint) },
+                                    colors = AssistChipDefaults.assistChipColors(
+                                        containerColor = if (success) brand.copy(alpha = 0.10f) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f),
+                                        labelColor = if (success) brand else MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                )
+                            }
                         }
-                    ) { Text("Listo") }
+                    }
 
-                    OutlinedButton(
-                        enabled = waiting,
-                        onClick = {
-                            onStopListening()
-                            waiting = false
-                            status = "Escritura cancelada."
-                        }
-                    ) { Text("Cancelar") }
+                    // Tira de ayuda
+                    HelpStrip()
                 }
-
-                lastReason?.let {
-                    Text("Detalle: $it", style = MaterialTheme.typography.bodySmall)
-                }
-
-                if (waiting) AssistCard("Mantén el tag en la parte trasera del móvil hasta que vibre o aparezca el OK.")
-                status?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
             }
+
+            Spacer(Modifier.height(12.dp))
         }
     }
 }
@@ -297,31 +419,83 @@ fun NfcRewriteScreen(
 /** =========== Helpers UI =========== */
 
 @Composable
-private fun SegmentedButtons(type: PayloadType, onTypeChange: (PayloadType) -> Unit) {
-    SingleChoiceSegmentedButtonRow {
-        SegmentedButton(
-            selected = type == PayloadType.CALL,
-            onClick = { onTypeChange(PayloadType.CALL) },
-            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-        ) { Text("Llamar") }
-
-        SegmentedButton(
-            selected = type == PayloadType.URL,
-            onClick = { onTypeChange(PayloadType.URL) },
-            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-        ) { Text("URL") }
+private fun PayloadSelector(selected: PayloadType, onSelect: (PayloadType) -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(
+            selected = selected == PayloadType.CALL,
+            onClick = { onSelect(PayloadType.CALL) },
+            label = { Text("Llamar") },
+            leadingIcon = { Icon(Icons.Filled.Phone, contentDescription = null) }
+        )
+        FilterChip(
+            selected = selected == PayloadType.URL,
+            onClick = { onSelect(PayloadType.URL) },
+            label = { Text("URL") },
+            leadingIcon = { Icon(Icons.Filled.Link, contentDescription = null) }
+        )
     }
 }
 
 @Composable
-private fun WarningCard(message: String) {
+private fun StatusBanner(text: String, brand: Color) {
+    val infinite = rememberInfiniteTransition(label = "pulse")
+    val alpha by infinite.animateFloat(
+        initialValue = 0.55f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "alpha"
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.large)
+            .background(
+                Brush.horizontalGradient(
+                    listOf(
+                        brand.copy(alpha = 0.18f),
+                        brand.copy(alpha = 0.10f)
+                    )
+                )
+            )
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(22.dp)
+                .clip(CircleShape)
+                .background(brand.copy(alpha = 0.22f))
+        ) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(brand)
+                    .alpha(alpha)
+            )
+        }
+        Text(text, color = Color(0xFF0E2138))
+    }
+}
+
+@Composable
+private fun WarningCard(
+    @StringRes messageRes: Int = R.string.nfc_not_available
+) {
     ElevatedCard(
         colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.errorContainer
-        )
+        ),
+        modifier = Modifier.fillMaxWidth()
     ) {
         Text(
-            message,
+            text = stringResource(messageRes),
             modifier = Modifier.padding(16.dp),
             color = MaterialTheme.colorScheme.onErrorContainer
         )
@@ -329,30 +503,106 @@ private fun WarningCard(message: String) {
 }
 
 @Composable
-private fun AssistCard(message: String) {
-    ElevatedCard { Text(message, modifier = Modifier.padding(16.dp)) }
+private fun HelpStrip() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.large)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(Icons.Filled.SdCard, contentDescription = null)
+        ProvideTextStyle(MaterialTheme.typography.bodySmall) {
+            Text("Consejo: mantén el móvil firme sobre la etiqueta durante 1–2 segundos.")
+        }
+    }
+}
+
+/** =========== Accesos rápidos =========== */
+
+private data class QuickLink(val title: String, val url: String, val subtitle: String)
+
+@Composable
+private fun QuickLinks(
+    brand: Color,
+    onPick: (String) -> Unit
+) {
+    val links = listOf(
+        QuickLink(
+            title = "Ruralvía",
+            url = "https://bancadigital.ruralvia.com/CA-FRONT/NBE/web/particulares/#/login",
+            subtitle = "Acceso banca digital"
+        ),
+        QuickLink(
+            title = "SESCAM",
+            url = "https://sescam.jccm.es/misaluddigital/app/inicio",
+            subtitle = "Mi Salud Digital"
+        )
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            "Accesos rápidos",
+            style = MaterialTheme.typography.titleMedium,
+            color = brand
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            links.forEach { item ->
+                ElevatedCard(
+                    shape = MaterialTheme.shapes.extraLarge,
+                    colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onPick(item.url) }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Filled.Link,
+                            contentDescription = null,
+                            tint = brand
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(item.title, style = MaterialTheme.typography.titleSmall, color = brand)
+                            ProvideTextStyle(MaterialTheme.typography.bodySmall) {
+                                Text(item.subtitle, modifier = Modifier.alpha(0.9f))
+                            }
+                        }
+                        Icon(
+                            Icons.AutoMirrored.Filled.OpenInNew,
+                            contentDescription = null,
+                            tint = brand.copy(alpha = 0.85f)
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** =========== Construcción del NDEF =========== */
 
 private fun buildMessage(type: PayloadType, rawInput: String): NdefMessage {
-    val records = mutableListOf<NdefRecord>()
-    when (type) {
+    val record: NdefRecord = when (type) {
         PayloadType.CALL -> {
             val tel = normalizePhone(rawInput)
-            records += NdefRecord.createUri("tel:$tel")
+            NdefRecord.createUri("tel:$tel")
         }
         PayloadType.URL -> {
             val url = ensureUrlScheme(rawInput)
-            records += NdefRecord.createUri(url)
+            NdefRecord.createUri(url)
         }
     }
-    // (Opcional) AAR de tu app
-    //records += NdefRecord.createApplicationRecord("com.example.contacto")
-    return NdefMessage(records.toTypedArray())
+    return NdefMessage(arrayOf(record))
 }
 
-/** Validaciones rápidas */
 private fun validateInput(type: PayloadType, input: String): String? {
     return when (type) {
         PayloadType.CALL -> {
@@ -379,6 +629,7 @@ private fun ensureUrlScheme(input: String): String {
 }
 
 /** Escritura al tag con motivo */
+
 data class WriteResult(
     val success: Boolean,
     val reason: String? = null

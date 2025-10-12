@@ -13,6 +13,8 @@
 
     <!-- Home -->
     <string name="home_subtitle">Gestiona tus tarjetas y escribe etiquetas NFC de forma sencilla.</string>
-    <string name="cta_speak">Escuchar saludo</string>
     <string name="cta_rewrite_nfc">Reescribir NFC</string>
+    <string name="nfc_not_available">Este dispositivo no tiene NFC o está desactivado.</string>
+    <string name="assist_default">Mantén el dispositivo cerca de la tarjeta hasta recibir mensaje de confirmación.</string>
+
 </resources>

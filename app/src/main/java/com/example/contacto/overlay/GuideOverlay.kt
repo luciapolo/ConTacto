@@ -1,67 +1,39 @@
 package com.example.contacto.overlay
 
 import android.content.Context
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.PixelFormat
+import android.content.Intent
 import android.graphics.Rect
-import android.view.View
-import android.view.WindowManager
-import android.os.Build
 
 object GuideOverlay {
-    private var windowManager: WindowManager? = null
-    private var view: HighlightView? = null
+    const val ACTION_SAY  = "com.example.contacto.overlay.SAY"
+    const val ACTION_STEP = "com.example.contacto.overlay.STEP"
 
-    fun show(ctx: Context, rects: List<Rect>) {
-        val wm = windowManager ?: (ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager)
-            .also { windowManager = it }
-
-        val overlay = view ?: HighlightView(ctx).also { view = it }
-
-        overlay.rects = rects
-        overlay.invalidate()
-
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            else
-                WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.TRANSLUCENT
+    fun start(context: Context, firstText: String) {
+        context.startService(
+            Intent(context, OverlayService::class.java)
+                .putExtra("firstText", firstText)
         )
-
-        if (overlay.parent == null) {
-            wm.addView(overlay, params)
-        } else {
-            wm.updateViewLayout(overlay, params)
-        }
     }
 
-    fun hide() {
-        view?.let { v ->
-            windowManager?.removeViewImmediate(v)
-        }
-        view = null
-        windowManager = null
+    fun stop(context: Context) {
+        context.stopService(Intent(context, OverlayService::class.java))
     }
 
-    private class HighlightView(context: Context) : View(context) {
-        var rects: List<Rect> = emptyList()
-        private val paint = Paint().apply {
-            style = Paint.Style.STROKE
-            strokeWidth = 8f
-            color = Color.RED
-        }
+    fun say(context: Context, text: String) {
+        context.sendBroadcast(
+            Intent(ACTION_SAY)
+                .setPackage(context.packageName)
+                .putExtra("text", text)
+        )
+    }
 
-        override fun onDraw(canvas: Canvas) {
-            super.onDraw(canvas)
-            rects.forEach { canvas.drawRect(it, paint) }
-        }
+    // Por ahora solo actualizamos texto; si luego quieres dibujar rectángulos,
+    // ampliaremos OverlayService para recibir una lista de Rect parcelables.
+    fun show(context: Context, rects: List<Rect>) {
+        context.sendBroadcast(
+            Intent(ACTION_STEP)
+                .setPackage(context.packageName)
+                .putExtra("text", "Sigue las indicaciones en la página")
+        )
     }
 }

@@ -4,15 +4,20 @@
     <!-- Permisos -->
     <uses-permission android:name="android.permission.NFC" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <!-- Quita CALL_PHONE si usas ACTION_DIAL (así evitas la advertencia de telefonía) -->
-    <!-- <uses-permission android:name="android.permission.CALL_PHONE" /> -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
+    <!-- Permiso para vibrar -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Features -->
     <uses-feature android:name="android.hardware.nfc" android:required="true" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
     <application
+        android:name=".App"
         android:allowBackup="true"
         android:label="ConTacto"
         android:icon="@mipmap/ic_launcher"
@@ -21,14 +26,130 @@
         android:theme="@style/Theme.ConTacto">
 
         <activity
+            android:name=".nfc.NfcReadNowActivity"
+            android:exported="true"
+            android:launchMode="singleTop" />
+
+        <activity
+            android:name=".data.SettingsActivity"
+            android:exported="true"
+            android:launchMode="singleTop" />
+
+        <!-- Activity “headless” que procesa y se cierra (SIN filtros) -->
+        <activity
+            android:name=".nfc.NfcReaderActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:excludeFromRecents="true"
+            android:taskAffinity="" />
+
+        <!-- ALIAS con TODOS los filtros (enable/disable vía toggle) -->
+        <activity-alias
+            android:name=".nfc.NfcReaderAlias"
+            android:exported="true"
+            android:enabled="false"
+            android:targetActivity=".nfc.NfcReaderActivity">
+
+            <!-- tel: -->
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="tel" />
+            </intent-filter>
+
+            <!-- http / https -->
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="http" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="https" />
+            </intent-filter>
+
+            <!-- Opcional: text/plain si grabas "tel:+34..." o "https://..." como texto -->
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity
             android:name=".nfc.NfcRewriteActivity"
             android:exported="true"
-            android:label="Reescribir NFC" />
+            android:label="Reescribir NFC"
+            android:launchMode="singleTop" />
+        <activity
+            android:name=".nfc.NfcRouterActivity"
+            android:exported="true"
+            android:taskAffinity=""
+            android:launchMode="singleTask"
+            android:label="NFC Router">
+
+            <!-- Cuando el NFC lleva una URI del SESCAM -->
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <!-- http -->
+                <data android:scheme="http" android:host="sescam.jccm.es" android:pathPrefix="/misaluddigital" />
+                <data android:scheme="http" android:host="sescam.castillalamancha.es" android:pathPrefix="/misaluddigital" />
+                <!-- https -->
+                <data android:scheme="https" android:host="sescam.jccm.es" android:pathPrefix="/misaluddigital" />
+                <data android:scheme="https" android:host="sescam.castillalamancha.es" android:pathPrefix="/misaluddigital" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="https"
+                    android:host="bancadigital.ruralvia.com"
+                    android:pathPrefix="/CA-FRONT/NBE/web/particulares" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https"
+                    android:host="bancadigital.ruralvia.com"
+                    android:pathPrefix="/CA-FRONT/NBE/web/particulares" />
+            </intent-filter>
+
+            <!-- (Opcional) Deep link de URLs del SESCAM -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <!-- http -->
+                <data android:scheme="http" android:host="sescam.jccm.es" android:pathPrefix="/misaluddigital" />
+                <data android:scheme="http" android:host="sescam.castillalamancha.es" android:pathPrefix="/misaluddigital" />
+                <!-- https -->
+                <data android:scheme="https" android:host="sescam.jccm.es" android:pathPrefix="/misaluddigital" />
+                <data android:scheme="https" android:host="sescam.castillalamancha.es" android:pathPrefix="/misaluddigital" />
+            </intent-filter>
+        </activity>
+
+        <!-- Guía del SESCAM -->
+        <activity
+            android:name=".web.SescamGuideActivity"
+            android:exported="false"
+            android:label="Guía SESCAM" />
+
+        <activity
+            android:name=".web.BankGuideActivity"
+            android:exported="false" />
+
 
         <!-- Como el namespace es com.example.contacto, con .MainActivity basta -->
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTop">
 
             <!-- Launcher -->
             <intent-filter>
@@ -36,24 +157,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Deep links: app://elder/... (puedes cambiar host si quieres) -->
+            <!-- Deep link de ejemplo -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="app" android:host="elder" />
             </intent-filter>
-
-            <!-- NFC NDEF - Abre la aplicación cada vez que el móvil detecta un NFC -->
-            <!-- <intent-filter>
-                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter> -->
-
-            <meta-data
-                android:name="android.nfc.action.TECH_DISCOVERED"
-                android:resource="@xml/nfc_tech_filter" />
         </activity>
 
         <!-- Servicio de accesibilidad -->
@@ -68,6 +178,9 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_config" />
         </service>
+        <service
+            android:name=".overlay.OverlayService"
+            android:exported="false" />
 
     </application>
 </manifest>
