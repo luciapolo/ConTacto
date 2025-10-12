@@ -1,20 +1,10 @@
 package com.example.contacto.nfc
 
-import android.net.Uri
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Call
-import androidx.compose.material.icons.outlined.Contactless
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.ui.graphics.graphicsLayer
-
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.nfc.NdefMessage
 import android.nfc.NdefRecord
 import android.nfc.NfcAdapter
@@ -23,57 +13,63 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.outlined.Contactless
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
-import com.example.contacto.web.SescamGuideActivity
 import com.example.contacto.web.BankGuideActivity
+import com.example.contacto.web.SescamGuideActivity
 
 class NfcReadNowActivity : ComponentActivity() {
 
-    // Dominios válidos del SESCAM
-    private val SESCAM_HOSTS = setOf("sescam.jccm.es", "www.sescam.jccm.es")
-
-    // Guardamos un tel: pendiente mientras pedimos permiso
+    private val brand = Color(0xFF0E2138) // azul de Home/Rewrite
     private var pendingTelUri: Uri? = null
-
 
     private val callPermLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         pendingTelUri?.let { tel ->
             if (granted) startActivity(Intent(Intent.ACTION_CALL, tel))
-            else startActivity(Intent(Intent.ACTION_DIAL, tel)) // fallback sin permiso
+            else startActivity(Intent(Intent.ACTION_DIAL, tel))
             pendingTelUri = null
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MaterialTheme { ReadNowScreen(this, ::onActionTel, ::onActionLink) } }
+        setContent { MaterialTheme { ReadNowScreen(this, ::onActionTel, ::onActionLink, brand) } }
     }
 
-    /** Acción de llamada */
     private fun onActionTel(tel: Uri) {
         val granted = ContextCompat.checkSelfPermission(
             this, Manifest.permission.CALL_PHONE
         ) == PackageManager.PERMISSION_GRANTED
-
-        if (granted) {
-            startActivity(Intent(Intent.ACTION_CALL, tel))
-        } else {
+        if (granted) startActivity(Intent(Intent.ACTION_CALL, tel))
+        else {
             pendingTelUri = tel
             callPermLauncher.launch(Manifest.permission.CALL_PHONE)
         }
     }
 
-    /** Acción abrir enlace o lanzar guía si es SESCAM */
     private fun onActionLink(uri: Uri) {
         val scheme = uri.scheme?.lowercase()
         if (scheme == "http" || scheme == "https") {
@@ -84,7 +80,7 @@ class NfcReadNowActivity : ComponentActivity() {
             val looksLikeRuralvia =
                 host == "bancadigital.ruralvia.com" &&
                         path.startsWith("/ca-front/nbe/web/particulares") &&
-                        (frag?.contains("/login") == true)
+                        frag.contains("/login")
 
             val looksLikeSescam =
                 host.contains("sescam.jccm.es") ||
@@ -94,21 +90,19 @@ class NfcReadNowActivity : ComponentActivity() {
             when {
                 looksLikeRuralvia -> {
                     startActivity(
-                        Intent(this, com.example.contacto.web.BankGuideActivity::class.java)
-                            .putExtra(com.example.contacto.web.BankGuideActivity.EXTRA_START_URL, uri.toString())
+                        Intent(this, BankGuideActivity::class.java)
+                            .putExtra(BankGuideActivity.EXTRA_START_URL, uri.toString())
                     )
-                    return
                 }
                 looksLikeSescam -> {
                     startActivity(
-                        Intent(this, com.example.contacto.web.SescamGuideActivity::class.java)
-                            .putExtra(com.example.contacto.web.SescamGuideActivity.EXTRA_START_URL, uri.toString())
+                        Intent(this, SescamGuideActivity::class.java)
+                            .putExtra(SescamGuideActivity.EXTRA_START_URL, uri.toString())
                     )
-                    return
                 }
-                else -> {
-                    startActivity(Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE))
-                }
+                else -> startActivity(
+                    Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)
+                )
             }
         }
     }
@@ -118,66 +112,59 @@ class NfcReadNowActivity : ComponentActivity() {
 private fun ReadNowScreen(
     activity: Activity,
     onTel: (Uri) -> Unit,
-    onLink: (Uri) -> Unit
+    onLink: (Uri) -> Unit,
+    brand: Color
 ) {
-    // ---- UI state ----
     var status by remember { mutableStateOf("Acerca una etiqueta…") }
     var statusType by remember { mutableStateOf(StatusType.Idle) }
 
-    // Animación de pulso para el icono NFC
+    // Animación pulso
     val pulse = rememberInfiniteTransition(label = "pulse")
     val scale by pulse.animateFloat(
-        initialValue = 0.95f,
-        targetValue = 1.15f,
+        initialValue = 0.95f, targetValue = 1.15f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+            animation = tween(900, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
-        ),
-        label = "scale"
+        ), label = "scale"
     )
     val glowAlpha by pulse.animateFloat(
-        initialValue = 0.18f,
-        targetValue = 0.35f,
+        initialValue = 0.18f, targetValue = 0.42f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 900, easing = LinearEasing),
+            animation = tween(900, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
-        ),
-        label = "alpha"
+        ), label = "alpha"
     )
 
-    // ---- NFC: Reader Mode mientras esta pantalla está en primer plano ----
+    // Reader Mode en primer plano
     DisposableEffect(Unit) {
         val adapter = NfcAdapter.getDefaultAdapter(activity)
         val callback = NfcAdapter.ReaderCallback { tag ->
             val ndef = Ndef.get(tag)
             val message: NdefMessage? = try {
-                ndef?.connect()
-                ndef?.cachedNdefMessage ?: ndef?.ndefMessage
-            } catch (_: Exception) { null } finally {
-                try { ndef?.close() } catch (_: Exception) {}
-            }
+                ndef?.connect(); ndef?.cachedNdefMessage ?: ndef?.ndefMessage
+            } catch (_: Exception) { null } finally { try { ndef?.close() } catch (_: Exception) {} }
 
             val (text, uri) = extractTextAndUri(message)
             val scheme = uri?.scheme?.lowercase()
 
             when {
                 scheme == "tel" -> {
-                    val u = uri
+                    val u = uri!!
                     activity.runOnUiThread {
-                        status = "Detectado teléfono: ${u!!.schemeSpecificPart}"
+                        status = "Detectado teléfono: ${u.schemeSpecificPart}"
                         statusType = StatusType.Tel
                     }
-                    onTel(u!!)
+                    onTel(u)
                 }
                 scheme == "http" || scheme == "https" -> {
-                    val u = uri
+                    val u = uri!!
                     activity.runOnUiThread {
                         status = "Abriendo enlace…"
                         statusType = StatusType.Link
                     }
-                    onLink(u!!)
+                    onLink(u)
                 }
-                text?.trim()?.startsWith("tel:", ignoreCase = true) == true -> {
+                text?.trim()?.startsWith("tel:", true) == true -> {
                     val tel = text.trim().toUri()
                     activity.runOnUiThread {
                         status = "Detectado teléfono: ${tel.schemeSpecificPart}"
@@ -185,7 +172,7 @@ private fun ReadNowScreen(
                     }
                     onTel(tel)
                 }
-                text?.trim()?.startsWith("http", ignoreCase = true) == true -> {
+                text?.trim()?.startsWith("http", true) == true -> {
                     val link = text.trim().toUri()
                     activity.runOnUiThread {
                         status = "Abriendo enlace…"
@@ -204,8 +191,7 @@ private fun ReadNowScreen(
         }
 
         adapter?.enableReaderMode(
-            activity,
-            callback,
+            activity, callback,
             NfcAdapter.FLAG_READER_NFC_A or
                     NfcAdapter.FLAG_READER_NFC_B or
                     NfcAdapter.FLAG_READER_NFC_F or
@@ -216,98 +202,105 @@ private fun ReadNowScreen(
         onDispose { adapter?.disableReaderMode(activity) }
     }
 
-    // ---- UI ----
-    Surface(Modifier.fillMaxSize()) {
+    // UI
+    Surface(Modifier.fillMaxSize(), color = Color.White) {
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(20.dp),
+            modifier = Modifier.fillMaxSize().padding(20.dp),
             contentAlignment = Alignment.Center
         ) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.extraLarge
+                shape = MaterialTheme.shapes.extraLarge,
+                colors = CardDefaults.cardColors(containerColor = Color.White)
             ) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp),
+                    modifier = Modifier.fillMaxWidth().padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
 
-                    // Glow + icono
-                    Box(contentAlignment = Alignment.Center) {
-                        Box(
-                            modifier = Modifier
-                                .size(160.dp * scale)
-                                .graphicsLayer { alpha = glowAlpha }
-                                .background(
-                                    color = when (statusType) {
-                                        StatusType.Tel -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.25f)
-                                        StatusType.Link -> MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-                                        StatusType.Neutral, StatusType.Idle -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.20f)
-                                    },
-                                    shape = CircleShape
+                    // Recuadro de color (mayor contraste)
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = brand.copy(alpha = 0.14f),
+                        shape = MaterialTheme.shapes.large
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(18.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // Glow + icono
+                            Box(contentAlignment = Alignment.Center) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(160.dp * scale)
+                                        .graphicsLayer { alpha = glowAlpha }
+                                        .background(
+                                            color = when (statusType) {
+                                                StatusType.Tel, StatusType.Link -> brand.copy(alpha = 0.28f)
+                                                StatusType.Neutral, StatusType.Idle -> Color(0xFF90A4AE).copy(alpha = 0.24f)
+                                            },
+                                            shape = CircleShape
+                                        )
                                 )
-                        )
-                        Icon(
-                            imageVector = Icons.Outlined.Contactless,
-                            contentDescription = null,
-                            modifier = Modifier.size(96.dp),
-                            tint = when (statusType) {
-                                StatusType.Tel -> MaterialTheme.colorScheme.tertiary
-                                StatusType.Link -> MaterialTheme.colorScheme.primary
-                                StatusType.Neutral, StatusType.Idle -> MaterialTheme.colorScheme.secondary
+                                Icon(
+                                    imageVector = Icons.Outlined.Contactless,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(96.dp),
+                                    tint = when (statusType) {
+                                        StatusType.Tel, StatusType.Link -> brand
+                                        StatusType.Neutral, StatusType.Idle -> Color(0xFF607D8B)
+                                    }
+                                )
                             }
-                        )
+
+                            Text(
+                                text = "Lectura dentro de la app",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = brand
+                            )
+
+                            AssistChip(
+                                onClick = {},
+                                label = { Text(status) },
+                                leadingIcon = {
+                                    val icon = when (statusType) {
+                                        StatusType.Tel -> Icons.Default.Call
+                                        StatusType.Link -> Icons.AutoMirrored.Filled.OpenInNew
+                                        StatusType.Neutral, StatusType.Idle -> Icons.Outlined.Contactless
+                                    }
+                                    Icon(icon, contentDescription = null)
+                                },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    labelColor = brand,
+                                    leadingIconContentColor = brand,
+                                    containerColor = brand.copy(alpha = 0.18f) // un pelín más visible
+                                )
+                            )
+                        }
                     }
-
-                    Text(
-                        text = "Lectura dentro de la app",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-
-                    // Chip de estado
-                    AssistChip(
-                        onClick = {},
-                        label = { Text(status) },
-                        leadingIcon = {
-                            val icon = when (statusType) {
-                                StatusType.Tel -> Icons.Default.Call
-                                StatusType.Link -> Icons.AutoMirrored.Filled.OpenInNew
-                                StatusType.Neutral, StatusType.Idle -> Icons.Outlined.Contactless
-                            }
-                            Icon(icon, contentDescription = null)
-                        },
-                        colors = AssistChipDefaults.assistChipColors(
-                            labelColor = MaterialTheme.colorScheme.onSurface,
-                            containerColor = when (statusType) {
-                                StatusType.Tel -> MaterialTheme.colorScheme.tertiaryContainer
-                                StatusType.Link -> MaterialTheme.colorScheme.primaryContainer
-                                StatusType.Neutral, StatusType.Idle -> MaterialTheme.colorScheme.secondaryContainer
-                            }
-                        )
-                    )
 
                     Spacer(Modifier.height(8.dp))
 
                     Button(
                         onClick = { activity.finish() },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.extraLarge
-                    ) {
-                        Text("Cerrar")
-                    }
+                        shape = MaterialTheme.shapes.extraLarge,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = brand,
+                            contentColor = Color.White
+                        )
+                    ) { Text("Cerrar") }
                 }
             }
         }
     }
 }
 
-private enum class StatusType { Idle, Tel, Link, Neutral }
+/* ---------- Helpers NDEF ---------- */
 
-/* ----------------- Helpers NDEF ----------------- */
+private enum class StatusType { Idle, Tel, Link, Neutral }
 
 private data class NdefData(val text: String?, val uri: Uri?)
 
