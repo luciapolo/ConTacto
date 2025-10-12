@@ -43,7 +43,7 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     // ===== Estado conversacional
-    private enum class Step { ASK_INTENT, PRIMARY, CIP, FINAL, FAR_PROV, FAR_LOC, FAR_DATE }
+    private enum class Step { ASK_INTENT, PRIMARY, CIP, FINAL, FAR_PROV, FAR_LOC, FAR_FECHA }
     private enum class FinalAction { PEDIR, VER }
     private var step: Step = Step.ASK_INTENT
     private var chosenFinal: FinalAction? = null
@@ -170,6 +170,10 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     // ================= TTS / STT =================
+    private fun String.isBackCmd(): Boolean {
+        val s = this.lowercase()
+        return s.contains("atrás") || s.contains("atras") || s.contains("volver") || s.contains("retrocede")
+    }
 
     private fun speakThen(textHtml: String, afterSpeak: (() -> Unit)? = null) {
         lastBanner = textHtml
@@ -232,7 +236,7 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             Step.FINAL -> listenFinal()
             Step.FAR_PROV -> listenFarProvincia()
             Step.FAR_LOC -> listenFarLocalidad()
-            Step.FAR_DATE -> listenFarFecha()
+            Step.FAR_FECHA -> listenFarFecha()
         }
     }
 
@@ -322,13 +326,14 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 speakThen("<b>¿Qué quieres hacer?</b> Di: <b>pedir</b> cita o <b>ver</b> citas.")
             }
             "FARMACIA" -> {
-                // Entramos en la pantalla de formulario de farmacia
                 step = Step.FAR_PROV
                 pendingQuickClick = null
                 speakThen("<b>Farmacia</b>. Dime la <b>provincia</b>.", afterSpeak = {
                     evalJs("""__agent && __agent.focusProvincia();""", true)
+                    listenFarProvincia()   // <- esto faltaba
                 })
             }
+
         }
         dbg("Context $prev -> $ctx")
     }
@@ -525,6 +530,22 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         };
 
         window.__agent = {
+        
+        findFarmaciasBtn: () => {
+          const nodes = Array.from(document.querySelectorAll('ion-button,button,a,[role="button"],ion-item,ion-card'));
+          const hit = nodes.find(el => /farmacias|buscar\s+farmacias/i.test((el.textContent||"")));
+          return hit || null;
+        },
+        highlightFarmaciaBuscar: () => {
+          const el = __agent.findFarmaciasBtn?.();
+          if (el) { el.scrollIntoView({behavior:"smooth", block:"center"}); (window.__guide_highlight||function(e){e.style.outline="4px solid #ff9800";})(); }
+        },
+        clickBuscarFarmacias: () => {
+          const el = __agent.findFarmaciasBtn?.();
+          if (el) { el.dispatchEvent(new MouseEvent("mousedown",{bubbles:true})); el.click?.(); el.dispatchEvent(new MouseEvent("mouseup",{bubbles:true})); }
+        },
+        enableLocalidad: () => { /* si hay lógica de habilitar, colócala; si no, deja no-op */ },
+
           banner: (html) => { const b = ensureBanner(); b.innerHTML = html; },
 
           showPrimary: () => { const el = findPrimary(); if (el){ el.scrollIntoView({behavior:"smooth", block:"center"}); highlight(el); } },
@@ -606,14 +627,31 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun listenIntent() {
         listenOnce { said ->
+            // Dentro de listenIntent(), justo donde ya tienes:
             if (pendingQuickClick != null && "pulsa" in said) {
                 when (pendingQuickClick) {
                     "FARMACIA" -> evalJs("""__agent && __agent.clickFarmacia();""", true)
-                    "WIFI" -> evalJs("""__agent && __agent.clickWifi();""", true)
+                    "WIFI"     -> evalJs("""__agent && __agent.clickWifi();""", true)
+                    "FARMACIA_BUSCAR" -> {
+                        evalJs("""__agent && __agent.clickBuscarFarmacias && __agent.clickBuscarFarmacias();""", true)
+// Respaldo por si no existe la función del agente
+                        evalJs(
+                            """
+    (function(){
+      var btn=[...document.querySelectorAll('ion-button,button,a,[role="button"]')]
+               .find(b=>/farmacias/i.test(b.textContent||'') && !b.disabled);
+      if(btn){ btn.click(); return true } else { return false }
+    })();
+    """.trimIndent(),
+                            true
+                        )
+
+                    }
                 }
                 pendingQuickClick = null
                 return@listenOnce
             }
+
 
             when {
                 "atrás" in said -> {
@@ -624,11 +662,18 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     chosenFinal = null
                     goPrimary()
                 }
+                // Dentro de listenIntent(), en el when/if que detecta "farmacia"
                 "farmacia" in said -> {
                     pendingQuickClick = "FARMACIA"
-                    speakThen("<b>Farmacia</b>. Pulsa el botón o di: pulsa por mí.")
-                    evalJs("""__agent && __agent.showFarmacia();""", true)
+                    speakThen("<b>Farmacia</b>. Pulsa el <b>botón resaltado</b> o di: <b>pulsa por mí</b>.") {
+                        evalJs("""__agent && __agent.showFarmacia();""", true)
+                        // luego seguimos escuchando por si dice "pulsa"
+                        listenIntent()
+                    }
+                    return@listenOnce
                 }
+
+
                 "wifi" in said -> {
                     pendingQuickClick = "WIFI"
                     speakThen("<b>Wi-Fi</b>. Pulsa el botón o di: pulsa por mí.")
@@ -719,37 +764,118 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun listenFarProvincia() {
         listenOnce { said ->
-            if ("atrás" in said) { goBackOneStep(); return@listenOnce }
-            val prov = normalizeForSelect(said)
-            evalJs("""__agent && __agent.setProvincia(${JSONObject.quote(prov)});""", true)
+            // Volver atrás robusto
+            if (said.isBackCmd()) {
+                goBackOneStep()
+                return@listenOnce
+            }
+
+            // Si no han dicho provincia… repite prompt
+            if (!said.contains("provincia") && !said.contains("toledo") && !said.contains("albacete")
+            /* … añade tus provincias si ya haces matching simple … */) {
+                speakThen(
+                    "Dime la <b>provincia</b> donde buscas la farmacia " +
+                            "o pulsa el <b>selector de provincia</b>. También puedes decir: <b>pulsa por mí</b>."
+                ) {
+                    evalJs("""__agent && __agent.focusProvincia && __agent.focusProvincia();""", true)
+                    listenFarProvincia()
+                }
+                return@listenOnce
+            }
+
+            // Aquí tu lógica actual de detección y set de provincia…
+            // Cuando detectes provincia correcta:
             step = Step.FAR_LOC
-            speakThen("Ahora dime la <b>localidad</b>.", afterSpeak = {
-                evalJs("""__agent && __agent.focusLocalidad();""", true)
-            })
+            speakThen(
+                "Perfecto. Ahora dime la <b>localidad</b> o pulsa el <b>selector de localidad</b>. " +
+                        "También puedes decir: <b>pulsa por mí</b>."
+            ) {
+                evalJs("""__agent && __agent.enableLocalidad && __agent.enableLocalidad();""", true)
+                evalJs("""__agent && __agent.focusLocalidad && __agent.focusLocalidad();""", true)
+                listenFarLocalidad()
+            }
         }
     }
+
 
     private fun listenFarLocalidad() {
         listenOnce { said ->
-            if ("atrás" in said) { step = Step.FAR_PROV; speakThen("Dime la <b>provincia</b>."); return@listenOnce }
-            val loc = normalizeForSelect(said)
-            evalJs("""__agent && __agent.setLocalidad(${JSONObject.quote(loc)});""", true)
-            step = Step.FAR_DATE
-            speakThen("¿Para qué <b>fecha</b>? Puedes decir: hoy, mañana o una fecha.", afterSpeak = {
-                evalJs("""__agent && __agent.focusFecha();""", true)
-            })
+            if (said.isBackCmd()) {
+                // Vuelve al paso de provincia
+                step = Step.FAR_PROV
+                evalJs("""__agent && __agent.focusProvincia && __agent.focusProvincia();""", true)
+                speakThen("Volvemos a <b>provincia</b>. Dime la provincia o di: <b>pulsa por mí</b>.") {
+                    listenFarProvincia()
+                }
+                return@listenOnce
+            }
+
+            // Tu lógica de localidad…
+            step = Step.FAR_FECHA
+            speakThen(
+                "Genial. Ahora elige la <b>fecha</b> en el calendario o dímela con voz. " +
+                        "Después, pulsa el <b>botón Farmacias</b> o di: <b>pulsa por mí</b>."
+            ) {
+                evalJs("""__agent && __agent.focusFecha && __agent.focusFecha();""", true)
+                // Si quieres, deja preparado el quick-click del botón de buscar farmacias
+                pendingQuickClick = "FARMACIA_BUSCAR"
+                listenFarFecha()
+            }
         }
     }
 
+
     private fun listenFarFecha() {
-        listenOnce { said ->
-            if ("atrás" in said) { step = Step.FAR_LOC; speakThen("Dime la <b>localidad</b>."); return@listenOnce }
-            val dateStr = parseSpokenDateIso(said) ?: todayIso()
-            evalJs("""__agent && __agent.setFecha(${JSONObject.quote(dateStr)});""", true)
-            speakThen("<b>Listo</b>. Provincia, localidad y fecha colocadas.")
-            // Aquí te quedas en la pantalla; si hay botón de buscar podrías añadir un “pulsa por mí”.
+        listenOnce { saidRaw ->
+            val said = saidRaw.lowercase()
+
+            if (said.isBackCmd()) {
+                step = Step.FAR_LOC
+                evalJs("""__agent && __agent.focusLocalidad && __agent.focusLocalidad();""", true)
+                speakThen("Volvemos a <b>localidad</b>. Dime la localidad o di: <b>pulsa por mí</b>.") {
+                    listenFarLocalidad()
+                }
+                return@listenOnce
+            }
+
+            if (said.contains("pulsa")) {
+                evalJs("""__agent && __agent.clickBuscarFarmacias && __agent.clickBuscarFarmacias();""", true)
+                // respaldo
+                evalJs(
+                    """
+                (function(){
+                  var btn=[...document.querySelectorAll('ion-button,button,a,[role="button"]')]
+                           .find(b=>/farmacias/i.test(b.textContent||'') && !b.disabled);
+                  if(btn){ btn.click(); return true } else { return false }
+                })();
+                """.trimIndent(),
+                    true
+                )
+                return@listenOnce
+            }
+
+            // === usar parseSpokenDateIso ===
+            val iso = parseSpokenDateIso(saidRaw) ?: run {
+                speakThen(
+                    "Dime una <b>fecha</b> como <b>hoy</b>, <b>mañana</b> o <b>12/10/2025</b>. " +
+                            "Luego, pulsa <b>Farmacias</b> o di: <b>pulsa por mí</b>."
+                ) {
+                    evalJs("""__agent && __agent.focusFecha && __agent.focusFecha();""", true)
+                    listenFarFecha()
+                }
+                return@listenOnce
+            }
+
+            evalJs("""__agent && __agent.setFecha && __agent.setFecha("$iso");""", true)
+            speakThen("Fecha establecida. Cuando quieras, pulsa <b>Farmacias</b> o di: <b>pulsa por mí</b>.") {
+                listenFarFecha()
+            }
         }
     }
+
+
+}
+
 
     // ==================== Utilidades ====================
 
@@ -825,7 +951,7 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             "w" to "W",
             "uve" to "V",
             "ve corta" to "V",
-            "ve" to "B",       // forzamos B para casos como “vejek” (BGK)
+            "ve" to "B",
             "be" to "B",
             "ce" to "C",
             "de" to "D",
@@ -906,4 +1032,4 @@ class SescamGuideActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     // ==================== FIN utilidades ====================
-}
+
