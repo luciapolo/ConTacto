@@ -87,4 +87,4 @@ app/
 
 - Añadir pruebas instrumentadas para flujos de `DataStore` y navegación Compose.
 - Externalizar textos largos de voz a recursos para localización.
-- Documentar políticas de privacidad y tratamiento de datos de voz
+- Documentar políticas de privacidad y tratamiento de datos de voz.
